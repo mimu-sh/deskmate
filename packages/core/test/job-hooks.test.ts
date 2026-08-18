@@ -117,6 +117,97 @@ describe("handleHookRequest", () => {
     expect(h.receive).not.toHaveBeenCalled();
   });
 
+  it("bounds the body by BYTES, not JS string length — a multi-byte body can exceed the cap while .length does not", async () => {
+    // Each "€" is 1 UTF-16 code unit (raw.length) but 3 UTF-8 bytes. 400,000 of them:
+    // .length ≈ 400,040 (well under MAX_HOOK_BODY_BYTES=1,048,576), byte length ≈
+    // 1,200,040 (well over it). A `.length`-based check would accept this.
+    const h = helpers();
+    const raw = JSON.stringify({ job: "feedback_triage", note: "€".repeat(400_000) });
+    expect(raw.length).toBeLessThan(1_048_576);
+    expect(Buffer.byteLength(raw, "utf8")).toBeGreaterThan(1_048_576);
+    const req = request({ body: raw });
+    const res = await handleHookRequest(req, {
+      jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
+    });
+    expect(res.status).toBe(413);
+    expect(h.receive).not.toHaveBeenCalled();
+  });
+
+  it("decodes multi-byte UTF-8 exactly like req.text() would, so the signature still verifies", async () => {
+    // Not oversized — proves the streaming reader's TextDecoder produces the same
+    // string req.text() would, including a char split across a chunk boundary
+    // (the reader in handleHookRequest reads in whatever chunk sizes the platform
+    // hands back; this body is small enough to likely arrive in one chunk, but the
+    // signature — computed over the exact raw text — is the strongest possible
+    // proof of byte-for-byte fidelity either way).
+    const h = helpers();
+    const raw = JSON.stringify({ job: "feedback_triage", note: "café €100 日本語" });
+    const req = request({ body: raw });
+    const res = await handleHookRequest(req, {
+      jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
+    });
+    expect(res.status).toBe(202);
+    const [, args] = h.receive.mock.calls[0];
+    expect(args.message).toContain("café €100 日本語");
+  });
+
+  it("rejects a chunked/streamed oversized body without buffering the whole thing", async () => {
+    // No content-length header (a real chunked request has none), and the stream
+    // never ends — if handleHookRequest still buffered the whole body (e.g. via
+    // req.text()), this would hang until the test times out instead of failing
+    // fast with 413. A bounded number of pulls, and a cancelled reader, prove the
+    // read stopped as soon as the cap was crossed.
+    const h = helpers();
+    const chunk = new Uint8Array(65_536).fill(97); // 64 KiB of 'a'
+    let pulls = 0;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const req = new Request("https://example.test/eve/v1/hooks/feedback_triage", {
+      method: "POST",
+      headers: new Headers({ "content-type": "application/json" }),
+      body: stream,
+      duplex: "half",
+    } as RequestInit);
+    const res = await handleHookRequest(req, {
+      jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
+    });
+    expect(res.status).toBe(413);
+    expect(h.receive).not.toHaveBeenCalled();
+    expect(cancelled).toBe(true);
+    // MAX_HOOK_BODY_BYTES (1_048_576) / 65_536-byte chunks = 16; a couple more is
+    // fine, but nowhere near "kept pulling forever".
+    expect(pulls).toBeLessThan(64);
+  });
+
+  it("treats a null body as empty rather than throwing", async () => {
+    const h = helpers();
+    const emptyRaw = "";
+    // No `body` key at all: req.body is null, distinct from an empty-string body.
+    const req = new Request("https://example.test/eve/v1/hooks/feedback_triage", {
+      method: "POST",
+      headers: new Headers({
+        "content-type": "application/json",
+        "x-deskmate-signature": signHookBody(secret, ts, emptyRaw),
+        "x-deskmate-timestamp": ts,
+      }),
+    });
+    expect(req.body).toBeNull();
+    const res = await handleHookRequest(req, {
+      jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
+    });
+    // Empty body isn't valid JSON, so this fails at parse — the point is that it
+    // gets there at all instead of throwing on a null req.body.
+    expect(res.status).toBe(400);
+  });
+
   it("refuses to construct a channel for a pr job with no handoff", () => {
     expect(() =>
       createHooksChannel(

@@ -10,6 +10,41 @@ import { verifyHookSignature } from "./signature.js";
 // attacker could replay or a secret an operator would need to rotate.
 const warn = (jobId: string, reason: string) => console.warn("[hooks]", `job=${jobId}`, reason);
 
+/**
+ * Reads the body incrementally and bounds it by BYTES (not JS string length — a
+ * multi-byte body can exceed `MAX_HOOK_BODY_BYTES` while its `.length` does not),
+ * aborting the moment the cap is crossed instead of buffering the rest. This is the
+ * real bound: it holds even for a chunked request, or one that lies about (or omits)
+ * `content-length`, on the one route reachable without the secret — the
+ * `content-length` pre-check in `handleHookRequest` is only a cheap early-out for
+ * when that header happens to be present and honest.
+ *
+ * Decodes with a single streaming `TextDecoder` across chunks so a multi-byte UTF-8
+ * character split across a chunk boundary decodes exactly as it would from
+ * `req.text()` — required because the signature is computed over the raw body text.
+ */
+async function readBoundedBody(req: Request): Promise<{ ok: true; raw: string } | { ok: false }> {
+  if (!req.body) return { ok: true, raw: "" };
+
+  const reader = req.body.getReader();
+  const decoder = new TextDecoder();
+  let raw = "";
+  let total = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_HOOK_BODY_BYTES) {
+      await reader.cancel();
+      return { ok: false };
+    }
+    raw += decoder.decode(value, { stream: true });
+  }
+  raw += decoder.decode();
+  return { ok: true, raw };
+}
+
 /** eve channels declare absolute route paths (cf. /eve/v1/slack, /eve/v1/github). */
 export const HOOKS_CHANNEL_ROUTE = "/eve/v1/hooks/:job";
 
@@ -52,12 +87,14 @@ export async function handleHookRequest(req: Request, ctx: HookRequestContext): 
     return new Response("payload too large", { status: 413 });
   }
 
-  const raw = await req.text();
-  // A missing or lying content-length still gets bounded once the body is in hand.
-  if (raw.length > MAX_HOOK_BODY_BYTES) {
+  // A missing or lying content-length still gets bounded — incrementally, so a
+  // chunked or falsely-small-declared body can never be buffered past the cap.
+  const bounded = await readBoundedBody(req);
+  if (!bounded.ok) {
     warn(jobId, "rejected: body exceeds the size limit");
     return new Response("payload too large", { status: 413 });
   }
+  const raw = bounded.raw;
 
   const verified = verifyHookSignature({
     raw,
