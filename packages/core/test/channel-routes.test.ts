@@ -24,6 +24,39 @@ describe("resolveRoute", () => {
   });
 });
 
+describe("resolveRoute — id-field fallback (inbound routing)", () => {
+  const idFieldRoutes = {
+    "ask-product": { deskmate: "pa", id: "C0123ABC" },
+  };
+
+  it("resolves a name-keyed route via its declared `id` field when only the id is known", () => {
+    expect(resolveRoute({ id: "C0123ABC" }, idFieldRoutes)).toEqual({ deskmate: "pa", lock: false });
+  });
+
+  it("prefers a direct key match over an id-field match when both exist", () => {
+    const ambiguous = {
+      // Keyed directly by the id itself — should win via the cheap, exact key lookup.
+      C0AMBIG: { deskmate: "key_match_deskmate" },
+      // A different, name-keyed route that also declares id: "C0AMBIG".
+      "ask-other": { deskmate: "id_field_deskmate", id: "C0AMBIG" },
+    };
+    expect(resolveRoute({ id: "C0AMBIG" }, ambiguous)).toEqual({ deskmate: "key_match_deskmate", lock: false });
+  });
+
+  it("returns null for an id that matches no key and no route's `id` field", () => {
+    expect(resolveRoute({ id: "C0UNKNOWN" }, idFieldRoutes)).toBeNull();
+  });
+
+  it("carries `lock` through the id-field path (defaulting false, honoring an explicit true)", () => {
+    const lockRoutes = {
+      "ask-locked": { deskmate: "locked_deskmate", id: "C0LOCKED", lock: true },
+      "ask-open": { deskmate: "open_deskmate", id: "C0OPEN" },
+    };
+    expect(resolveRoute({ id: "C0LOCKED" }, lockRoutes)).toEqual({ deskmate: "locked_deskmate", lock: true });
+    expect(resolveRoute({ id: "C0OPEN" }, lockRoutes)).toEqual({ deskmate: "open_deskmate", lock: false });
+  });
+});
+
 describe("ChannelRoute.watch type", () => {
   it("accepts a route with a watch block", () => {
     const route: ChannelRoute = {

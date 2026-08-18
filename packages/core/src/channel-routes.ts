@@ -48,7 +48,11 @@ export function resolveRoute(
 ): ResolvedRoute | null {
   const key =
     (channel.name && routes[channel.name] ? channel.name : undefined) ??
-    (channel.id && routes[channel.id] ? channel.id : undefined);
+    (channel.id && routes[channel.id] ? channel.id : undefined) ??
+    // Fallback: a name-keyed route that declares its Slack id explicitly. Inbound
+    // events carry only the id, so without this the `id` field would be honoured
+    // outbound (resolveChannelTarget) and ignored inbound.
+    (channel.id ? Object.keys(routes).find((k) => routes[k].id === channel.id) : undefined);
   if (!key) return null;
   return { deskmate: routes[key].deskmate, lock: routes[key].lock ?? false };
 }
