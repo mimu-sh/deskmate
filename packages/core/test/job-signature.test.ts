@@ -38,6 +38,22 @@ describe("verifyHookSignature", () => {
   it("accepts a timestamp inside the replay window", () => {
     expect(verifyHookSignature({ ...ok, nowMs: nowMs + 299_000 })).toBe(true);
   });
+  it("compares whole seconds, not fractional ms — sub-second jitter must not shrink the window", () => {
+    // sentSec is "1000". `nowMs` carries 500ms of same-instant jitter, so the
+    // FRACTIONAL comparison (nowMs / 1000 - sentSec) sees 300.5s and would reject,
+    // even though the true whole-second difference — the only granularity a sender
+    // can express in `timestamp` — is exactly the 300s tolerance boundary.
+    const sentTs = "1000";
+    expect(
+      verifyHookSignature({
+        raw,
+        secret,
+        signature: signHookBody(secret, sentTs, raw),
+        timestamp: sentTs,
+        nowMs: 1_300_500,
+      }),
+    ).toBe(true);
+  });
   it.each([
     ["missing signature", { signature: null }],
     ["missing timestamp", { timestamp: null }],

@@ -37,7 +37,12 @@ export function verifyHookSignature(input: VerifyHookInput): boolean {
   if (!/^\d+$/.test(timestamp)) return false;
   const sentSec = Number(timestamp);
   if (!Number.isFinite(sentSec)) return false;
-  if (Math.abs(nowMs / 1000 - sentSec) > tolerance) return false;
+  // Compare whole seconds on both sides: `timestamp` can only ever carry integer
+  // unix seconds, so comparing it against a fractional `nowMs / 1000` shrinks the
+  // effective window by up to a second and makes the boundary depend on ms
+  // alignment. Floor first, then diff two integers.
+  const nowSec = Math.floor(nowMs / 1000);
+  if (Math.abs(nowSec - sentSec) > tolerance) return false;
 
   const expected = Buffer.from(signHookBody(secret, timestamp, raw));
   const actual = Buffer.from(signature);

@@ -31,6 +31,45 @@ describe("defineTeam", () => {
     ).toThrow(/unknown deskmate/i);
   });
 
+  it("rejects two channel routes declaring the same id — resolveRoute's id fallback would pick whichever it finds first", () => {
+    expect(() =>
+      defineTeam({
+        deskmates: { devops: { role: "devops", emoji: "🔧", displayName: "D", summary: "…", reads: [] } },
+        connections: {},
+        channels: {
+          incidents: { deskmate: "devops", id: "C0123ABC" },
+          alerts: { deskmate: "devops", id: "C0123ABC" },
+        },
+      }),
+    ).toThrow(/incidents.*alerts|alerts.*incidents/is);
+  });
+
+  it("rejects a channel route whose id equals another route's key — the direct-key branch would silently win instead", () => {
+    expect(() =>
+      defineTeam({
+        deskmates: { devops: { role: "devops", emoji: "🔧", displayName: "D", summary: "…", reads: [] } },
+        connections: {},
+        channels: {
+          C0123ABC: { deskmate: "devops" },
+          incidents: { deskmate: "devops", id: "C0123ABC" },
+        },
+      }),
+    ).toThrow(/incidents.*C0123ABC|C0123ABC.*incidents/is);
+  });
+
+  it("accepts a valid config where every channel id is distinct", () => {
+    const team = defineTeam({
+      deskmates: { devops: { role: "devops", emoji: "🔧", displayName: "D", summary: "…", reads: [] } },
+      connections: {},
+      channels: {
+        incidents: { deskmate: "devops", id: "C0123ABC" },
+        alerts: { deskmate: "devops", id: "C0456DEF" },
+      },
+    });
+    expect(team.channels.incidents.id).toBe("C0123ABC");
+    expect(team.channels.alerts.id).toBe("C0456DEF");
+  });
+
   it("rejects a deskmate id that isn't a snake_case identifier", () => {
     expect(() =>
       defineTeam({

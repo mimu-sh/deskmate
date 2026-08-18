@@ -172,6 +172,28 @@ export function defineTeam(input: unknown): TeamConfig {
   for (const [ch, route] of Object.entries(team.channels)) {
     if (!team.deskmates[route.deskmate]) throw new Error(`channel "${ch}" routes to unknown deskmate "${route.deskmate}"`);
   }
+  // `resolveRoute`'s id-field fallback (channel-routes.ts's `resolveRouteKey`) scans
+  // `routes` for the first entry whose `id` matches, so a duplicated or key-colliding
+  // id is ambiguous at best — and at worst, silently unreachable, since the direct-key
+  // branch is checked first and would always win over the id fallback.
+  const idOwner = new Map<string, string>(); // route.id -> the channel key that declares it
+  for (const [ch, route] of Object.entries(team.channels)) {
+    if (route.id === undefined) continue;
+    if (route.id !== ch && team.channels[route.id]) {
+      throw new Error(
+        `channel "${ch}" declares id "${route.id}", which is also the key of channel "${route.id}" — ` +
+          `an inbound event for that id would resolve directly to "${route.id}", never to "${ch}".`,
+      );
+    }
+    const owner = idOwner.get(route.id);
+    if (owner) {
+      throw new Error(
+        `channels "${owner}" and "${ch}" both declare id "${route.id}" — resolveRoute's id fallback ` +
+          `would resolve it to whichever one it finds first, which is ambiguous.`,
+      );
+    }
+    idOwner.set(route.id, ch);
+  }
   const codingIds = Object.entries(team.deskmates).filter(([, d]) => d.coding).map(([id]) => id);
   for (const [id, job] of Object.entries(team.jobs)) {
     if (!IDENTIFIER_RE.test(id)) {
