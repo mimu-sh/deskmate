@@ -6,6 +6,9 @@ const ConnectionConfig = z
     env: z.string().optional(), // token model → <ENV>_MCP_URL/_TOKEN
     connect: z.string().min(1).optional(), // oauth model → app-scoped Vercel Connect connector UID
     service: z.string().min(1).optional(), // oauth model → Connect service id for `vercel connect create`
+    // Declares that this connection can mutate the remote system. Consumed by job
+    // ceiling validation; read-only is the default and the overwhelming majority.
+    write: z.boolean().default(false),
   })
   .refine((c) => !(c.env && c.connect), {
     message: "a connection uses either `env` (token) or `connect` (oauth), not both",
@@ -69,9 +72,37 @@ const ChannelWatch = z.object({
 // `frontDesk` field above documents with `.prefault({})`.
 const ChannelRoute = z.object({
   deskmate: z.string(),
+  // The Slack conversation id, when the key is a human-readable name. `receive()`
+  // hands `target.channelId` straight to Slack, which cannot resolve a bare name.
+  id: z.string().min(1).optional(),
   lock: z.boolean().optional(),
   watch: ChannelWatch.optional(),
 });
+
+const WINDOW_RE = /^\d+[hd]$/;
+
+const JobConfig = z
+  .object({
+    deskmate: z.string(),
+    channel: z.string(),
+    // Exactly one trigger, mirroring eve's own `markdown` | `run` one-of on schedules.
+    cron: z.string().min(1).optional(),
+    webhook: z.boolean().optional(),
+    // How far the job may go unattended. Cumulative: pr ⊃ issue ⊃ digest.
+    ceiling: z.enum(["digest", "issue", "pr"]).default("digest"),
+    // How far back a cron job looks. Ignored for webhook jobs, which carry a payload.
+    window: z.string().regex(WINDOW_RE, "window must look like `24h` or `7d`").default("24h"),
+    maxItems: z.number().int().positive().default(3),
+    // Brief path relative to roles/<role>/jobs/. Defaults to `<job-id>.md`.
+    brief: z.string().min(1).optional(),
+    // For ceiling `pr`: which coding deskmate receives the work. Inferred when the
+    // team has exactly one coding deskmate.
+    handoff: z.string().min(1).optional(),
+    enabled: z.boolean().default(true),
+  })
+  .refine((j) => (j.cron !== undefined) !== (j.webhook === true), {
+    message: "a job uses either `cron` or `webhook: true`, not both and not neither",
+  });
 
 const TeamConfig = z.object({
   model: z.string().default("anthropic/claude-sonnet-5"),
@@ -91,12 +122,14 @@ const TeamConfig = z.object({
   connections: z.record(z.string(), ConnectionConfig).default({}),
   deskmates: z.record(z.string(), DeskmateConfig).default({}),
   channels: z.record(z.string(), ChannelRoute).default({}),
+  jobs: z.record(z.string(), JobConfig).default({}),
 });
 
 export type TeamConfig = z.infer<typeof TeamConfig>;
 export type DeskmateConfig = z.infer<typeof DeskmateConfig>;
 export type ConnectionConfig = z.infer<typeof ConnectionConfig>;
 export type CodingSetting = z.infer<typeof CodingSetting>;
+export type JobConfig = z.infer<typeof JobConfig>;
 
 // Deskmate ids and connection names become directory names AND import specifiers in
 // the generated `agent/**` tree, so they must be safe snake_case identifiers (same
@@ -138,6 +171,69 @@ export function defineTeam(input: unknown): TeamConfig {
   }
   for (const [ch, route] of Object.entries(team.channels)) {
     if (!team.deskmates[route.deskmate]) throw new Error(`channel "${ch}" routes to unknown deskmate "${route.deskmate}"`);
+  }
+  // `resolveRoute`'s id-field fallback (channel-routes.ts's `resolveRouteKey`) scans
+  // `routes` for the first entry whose `id` matches, so a duplicated or key-colliding
+  // id is ambiguous at best — and at worst, silently unreachable, since the direct-key
+  // branch is checked first and would always win over the id fallback.
+  const idOwner = new Map<string, string>(); // route.id -> the channel key that declares it
+  for (const [ch, route] of Object.entries(team.channels)) {
+    if (route.id === undefined) continue;
+    if (route.id !== ch && team.channels[route.id]) {
+      throw new Error(
+        `channel "${ch}" declares id "${route.id}", which is also the key of channel "${route.id}" — ` +
+          `an inbound event for that id would resolve directly to "${route.id}", never to "${ch}".`,
+      );
+    }
+    const owner = idOwner.get(route.id);
+    if (owner) {
+      throw new Error(
+        `channels "${owner}" and "${ch}" both declare id "${route.id}" — resolveRoute's id fallback ` +
+          `would resolve it to whichever one it finds first, which is ambiguous.`,
+      );
+    }
+    idOwner.set(route.id, ch);
+  }
+  const codingIds = Object.entries(team.deskmates).filter(([, d]) => d.coding).map(([id]) => id);
+  for (const [id, job] of Object.entries(team.jobs)) {
+    if (!IDENTIFIER_RE.test(id)) {
+      throw new Error(
+        `job id "${id}" must be snake_case (a lowercase letter, then letters/digits/underscores) — ` +
+          `it becomes a generated filename and a webhook URL segment.`,
+      );
+    }
+    const d = team.deskmates[job.deskmate];
+    if (!d) throw new Error(`job "${id}" routes to unknown deskmate "${job.deskmate}"`);
+    if (!team.channels[job.channel]) throw new Error(`job "${id}" targets unknown channel "${job.channel}"`);
+
+    // Ceilings are cumulative, so anything above `digest` needs somewhere to write.
+    if (job.ceiling !== "digest") {
+      const hasWrite = d.reads.some((r) => team.connections[r]?.write === true);
+      if (!hasWrite) {
+        throw new Error(
+          `job "${id}" has ceiling "${job.ceiling}" but deskmate "${job.deskmate}" reads no ` +
+            `write-capable connection — mark one of its connections \`write: true\` or lower the ceiling.`,
+        );
+      }
+    }
+
+    if (job.ceiling === "pr") {
+      if (job.handoff) {
+        if (!team.deskmates[job.handoff]?.coding) {
+          throw new Error(
+            `job "${id}" handoff "${job.handoff}" must name a deskmate with \`coding\` enabled.`,
+          );
+        }
+      } else if (codingIds.length === 0) {
+        throw new Error(`job "${id}" has ceiling "pr" but the team has no coding deskmate to hand off to.`);
+      } else if (codingIds.length > 1) {
+        throw new Error(
+          `job "${id}" has ceiling "pr" and the handoff is ambiguous (${codingIds.join(", ")}) — set \`handoff\`.`,
+        );
+      } else {
+        job.handoff = codingIds[0];
+      }
+    }
   }
   // Coding deskmates require the team `github` block, and every repo in their allowlist
   // must resolve to that single org (Phase 1 brokers one installation token per session).

@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import type { ChannelRoute, TeamConfig } from "@deskmate/core";
 import { DEFAULT_SWEEP_CRON } from "@deskmate/core";
+import type { HookJob, JobSpec } from "@deskmate/core/jobs";
 
 // Lazy accessor for core's front-desk prose. Importing it at module top-level made
 // EVERY CLI command read core's `.md` at startup (this module is on the shared
@@ -68,6 +69,7 @@ ${entries.join("\n")}
 export function renderChannelRoutes(team: TeamConfig): string {
   const entries = Object.entries(team.channels).map(([channel, route]) => {
     const value: ChannelRoute = { deskmate: route.deskmate };
+    if (route.id !== undefined) value.id = route.id;
     if (route.lock !== undefined) value.lock = route.lock;
     if (route.watch !== undefined) value.watch = route.watch;
     return `  ${JSON.stringify(channel)}: ${JSON.stringify(value)},`;
@@ -432,5 +434,58 @@ GITHUB_APP_SLUG=`
 # GITHUB_TOKEN=`
     : "";
 
-  return `${preamble}${body}${memory}${coding}${oauthBlock}\n`;
+  // Surface DESKMATE_HOOK_SECRET when ≥1 job declares `webhook: true` — it's the
+  // one REQUIRED secret a webhook job introduces that nothing else scaffolds.
+  // Without it: deploy, the hooks channel 503s every request forever, with no
+  // signal anywhere (see plan.ts's matching sync warning).
+  const anyWebhookJob = Object.values(team.jobs ?? {}).some((j) => j.webhook === true);
+  const jobs = anyWebhookJob
+    ? `\n\n# ── Proactive job webhooks ───────────────────────────────────────────────
+# Required by any job using \`webhook: true\`. Every inbound event must carry
+# x-deskmate-timestamp (unix seconds) and x-deskmate-signature —
+# sha256=hmac-sha256(DESKMATE_HOOK_SECRET, "<timestamp>.<raw body>") — verified
+# constant-time with a five-minute replay window (see README → Webhook signature).
+# Without this set, the hooks channel returns 503 for every request:
+DESKMATE_HOOK_SECRET=`
+    : "";
+
+  return `${preamble}${body}${memory}${coding}${oauthBlock}${jobs}\n`;
+}
+
+/**
+ * `agent/schedules/job-<id>.ts` — one cron job. Each job gets its own file so each
+ * becomes its own Vercel Cron Job with an independent cadence (the shared sweep
+ * cannot express that). The spec is JSON-encoded, which is what keeps a brief
+ * containing backticks or `${}` from breaking the generated module.
+ */
+export function renderJobSchedule(input: {
+  jobId: string;
+  cron: string;
+  channelId: string;
+  job: JobSpec;
+}): string {
+  return `${BANNER}
+import { createJobSchedule } from "@deskmate/core/jobs";
+import slack from "../channels/slack.js";
+
+export default createJobSchedule({
+  cron: ${JSON.stringify(input.cron)},
+  channelId: ${JSON.stringify(input.channelId)},
+  slack,
+  job: ${JSON.stringify(input.job, null, 2)},
+});
+`;
+}
+
+/**
+ * `agent/channels/hooks.ts` — ONE channel serving every webhook job, mounted at
+ * /eve/v1/hooks/:job. Emitted only when at least one job declares `webhook: true`.
+ */
+export function renderHooksChannel(jobs: Record<string, HookJob>): string {
+  return `${BANNER}
+import { createHooksChannel } from "@deskmate/core/jobs";
+import slack from "./slack.js";
+
+export default createHooksChannel(${JSON.stringify(jobs, null, 2)}, { slack });
+`;
 }

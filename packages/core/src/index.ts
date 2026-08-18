@@ -20,6 +20,8 @@ export {
   resolveRoute,
   resolveWatch,
   watchDisabled,
+  resolveChannelTarget,
+  isSlackChannelId,
   DEFAULT_REACTION_PALETTE,
   type ChannelRoute,
   type ResolvedRoute,

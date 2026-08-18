@@ -85,7 +85,7 @@ describe("deskmate add — seeds matching connections", () => {
     const raw = loadTeam(src);
     expect(() => defineTeam(raw)).not.toThrow();
     const team = defineTeam(raw);
-    expect(team.connections.mixpanel).toEqual({ kind: "mcp", env: "MIXPANEL" });
+    expect(team.connections.mixpanel).toEqual({ kind: "mcp", env: "MIXPANEL", write: false });
     expect(team.deskmates.product_analyst.reads).toEqual(["mixpanel"]);
     // The authored role was copied in too.
     expect(existsSync(join(cwd, "roles", "product_analyst", "deskmate.json"))).toBe(true);

@@ -16,3 +16,8 @@ describe("sweepTargets", () => {
     expect(sweepTargets(routes as any)).toEqual([{ channelId: "C0A", deskmate: "devops" }]);
   });
 });
+
+it("resolves a name-keyed channel to its declared Slack id", () => {
+  const named = { "ask-devops": { deskmate: "devops", id: "C0XYZ", watch: { digest: true, post: true } } };
+  expect(sweepTargets(named as any)).toEqual([{ channelId: "C0XYZ", deskmate: "devops" }]);
+});

@@ -42,6 +42,10 @@
     "./coding": {
       "types": "./dist/coding/index.d.ts",
       "default": "./dist/coding/index.js"
+    },
+    "./jobs": {
+      "types": "./dist/jobs/index.d.ts",
+      "default": "./dist/jobs/index.js"
     }
   },
   "files": [
