@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/mama-sh/deskmate/compare/cli-v0.5.0...cli-v0.6.0) (2026-08-18)
+
+
+### Features
+
+* proactive jobs (scheduled + webhook-triggered) ([#34](https://github.com/mama-sh/deskmate/issues/34)) ([cb8e324](https://github.com/mama-sh/deskmate/commit/cb8e324ce8a92fc42356f405c851628bab992a29))
+
 ## [0.5.0](https://github.com/mama-sh/deskmate/compare/cli-v0.4.0...cli-v0.5.0) (2026-07-06)
 
 
