@@ -181,6 +181,15 @@ describe("renderChannelRoutes", () => {
     const team = { ...fixtureTeam, channels: { C0G: { deskmate: "product_analyst" } } } as unknown as TeamConfig;
     expect(renderChannelRoutes(team)).toContain('"C0G": {"deskmate":"product_analyst"}');
   });
+
+  it("preserves a name-keyed route's id — without it, inbound routing/sweep/ambient-watch can never resolve it", () => {
+    const team = {
+      ...fixtureTeam,
+      channels: { incidents: { deskmate: "devops", id: "C0123ABC" } },
+    } as unknown as TeamConfig;
+    const out = renderChannelRoutes(team);
+    expect(out).toContain('"incidents": {"deskmate":"devops","id":"C0123ABC"}');
+  });
 });
 
 describe("renderFrontDeskInstructions", () => {

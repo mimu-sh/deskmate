@@ -106,13 +106,19 @@ describe("planSync", () => {
   it("generates agent/lib/channel-routes.ts from team.channels", () => {
     const teamWithChannels = {
       ...fixtureTeam,
-      channels: { C1: { deskmate: "devops", lock: true } },
+      channels: {
+        C1: { deskmate: "devops", lock: true },
+        incidents: { deskmate: "devops", id: "C0123ABC" },
+      },
     } as unknown as TeamConfig;
     const plan = planSync(teamWithChannels, cwd);
     const write = find(plan, "agent/lib/channel-routes.ts");
     expect(write).toBeDefined();
     expect(write?.contents).toContain("export const CHANNEL_ROUTES: Record<string, ChannelRoute> = {");
     expect(write?.contents).toContain('"C1": {"deskmate":"devops","lock":true}');
+    // A name-keyed route's `id` must survive planSync end-to-end, not just renderChannelRoutes
+    // in isolation — this is what inbound routing/sweep/ambient-watch resolve against.
+    expect(write?.contents).toContain('"incidents": {"deskmate":"devops","id":"C0123ABC"}');
   });
 
   it("plans each deskmate's subagent files", () => {
