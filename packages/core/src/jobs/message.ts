@@ -75,6 +75,8 @@ function dedupProtocol(): string {
     "new occurrence instead of opening a duplicate. Only when nothing matches, open a new issue",
     `carrying the \`${JOB_LABEL}\` label and its own fingerprint line, using a stable kebab-case`,
     "slug that names the problem itself — not this run's phrasing of it.",
+    `If the \`${JOB_LABEL}\` label does not exist yet, create it. If the tracker rejects an`,
+    "unknown label, still file the issue with the fingerprint line in the body.",
   ].join("\n");
 }
 

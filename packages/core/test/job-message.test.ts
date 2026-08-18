@@ -81,6 +81,15 @@ describe("buildJobMessage", () => {
     expect(msg).toContain("add a comment to THAT issue");
   });
 
+  it("tells the model to create the label if the tracker doesn't have it, and to file anyway if the tracker rejects it", () => {
+    // Nothing provisions `deskmate-job` on a fresh tracker, and we deliberately do
+    // not add label-provisioning code (the agent files through whatever MCP tool it
+    // has) — so the contract itself must make the instruction robust to both gaps.
+    const msg = buildJobMessage(spec({ ceiling: "issue" }));
+    expect(msg).toMatch(/create (it|the label)/i);
+    expect(msg).toMatch(/still file the issue/i);
+  });
+
   it("renders its example marker via fingerprintMarker, so the prompt and the parser can never drift", () => {
     const msg = buildJobMessage(spec({ ceiling: "issue" }));
     expect(msg).toContain(fingerprintMarker("some-stable-slug"));
