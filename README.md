@@ -555,6 +555,196 @@ checklist by hand after enabling watching:
    - a **rapid second message** inside the cooldown does **not** double-reply;
    - with `post: false`, **no top-level posts** appear.
 
+## Proactive jobs
+
+Proactive watching reacts to channel activity. **Jobs** are the other shape of
+unattended work: a named unit defined by a **cadence or an inbound event**, a
+**deskmate**, a **brief**, and a **destination channel** — independent of whether
+anyone is talking. Use a job for "every morning, have the product analyst read
+yesterday's usage data and file what matters" or "the moment a customer submits
+feedback, have someone triage it."
+
+### Config
+
+Add a `jobs` block to `deskmate.config.ts`:
+
+```ts
+jobs: {
+  conversation_review: {
+    deskmate: "product_analyst",
+    cron: "0 6 * * *",   // exactly one of cron | webhook
+    channel: "product",  // a key in `channels`
+    ceiling: "issue",    // "digest" | "issue" | "pr"
+    window: "24h",       // cron jobs only
+    maxItems: 3,
+  },
+  feedback_triage: {
+    deskmate: "customer_success",
+    webhook: true,
+    channel: "success",
+    ceiling: "issue",
+  },
+},
+```
+
+| Field | Meaning |
+|---|---|
+| `deskmate` | Who runs it. Must exist in `deskmates`. |
+| `cron` \| `webhook` | The trigger. Exactly one — `cron` mirrors `defineSchedule`'s cron string; `webhook: true` mounts it on the shared hooks channel. |
+| `channel` | Where output lands. A key in `channels`. |
+| `ceiling` | How far the job may go unattended: `"digest"` \| `"issue"` \| `"pr"`. Default `"digest"`. |
+| `window` | How far back a cron job looks, as `^\d+[hd]$` (e.g. `24h`, `7d`). Default `24h`. Ignored for webhook jobs — they carry their own payload. |
+| `maxItems` | Cap on action items (issues) filed per run. Default `3`. |
+| `brief` | Brief filename, relative to `roles/<role>/jobs/`. Defaults to `<job-id>.md`. |
+| `handoff` | For `ceiling: "pr"`, which coding deskmate receives the work. Inferred automatically when the team has exactly one coding deskmate (see [Coding](#coding-opt-in)); ambiguous otherwise and `defineTeam` throws. |
+| `enabled` | Set `false` to stop a job without deleting its config. Default `true`. |
+
+`defineTeam` validates all of this at config time: unknown `deskmate`/`channel`,
+both or neither of `cron`/`webhook`, a malformed `window`, a non-snake_case job id
+(it becomes a generated filename and a webhook URL segment) all throw before
+`deskmate sync` writes anything.
+
+### Briefs live beside the role
+
+A job's brief is a role file — `roles/<role>/jobs/<job-id>.md` — versioned next to
+the deskmate that runs it, the same way `instructions.md` and `skills/` are.
+`deskmate sync` reads it and inlines the body into the generated schedule/hook
+payload; since `build` runs `deskmate sync && eve build`, an edited brief can never
+ship stale. A missing brief doesn't fail the build — sync emits a `<!-- TODO -->`
+placeholder plus a warning so the job is visibly incomplete rather than silently
+broken.
+
+### The autonomy ceiling
+
+Every job declares how far it may go **without a human in the loop**. The three
+ceilings are **cumulative** — `pr` ⊃ `issue` ⊃ `digest` — each one able to do
+everything the tier below it can, plus one more thing:
+
+| Ceiling | May do |
+|---|---|
+| `digest` | Post findings to the channel. Nothing else — no issues, no PRs, no external record. |
+| `issue` | Everything `digest` can, plus file up to `maxItems` issue(s) for what clears the bar. |
+| `pr` | Everything `issue` can, plus hand **one** well-scoped item to the `handoff` coding deskmate. That deskmate's own `approval: always()` gate still stands before any PR opens — a job never bypasses it. |
+
+**This is instruction-enforced and capability-gated, not sandboxed.** `defineTeam`
+guarantees a job's deskmate *can* do what its ceiling allows — anything above
+`digest` requires the deskmate to `read` a connection marked `write: true` (see
+below), or config validation rejects the job outright — but nothing intercepts
+tool calls at run time. The ceiling narrows what the job is *told* to do and what
+it is *equipped* to do; it is the honest boundary, not an enforced one.
+
+Every job whose ceiling is above `digest` also gets a **deduplication protocol**
+appended to its brief: before filing, search issues for `label:deskmate-job` and a
+`<!-- deskmate-fingerprint: <slug> -->` marker; on a match, comment on the existing
+issue instead of opening a duplicate. The issue tracker is the ledger — no storage
+of its own.
+
+### Two supporting config fields
+
+**`write` on a connection.** Write capability was previously expressed only in
+comments, so nothing could check it. Mark a connection `write: true` and job
+ceiling validation can require it:
+
+```ts
+connections: {
+  linear: { kind: "mcp", env: "LINEAR", write: true },
+},
+```
+
+**`id` on a channel route.** `receive()` hands `target.channelId` straight to
+Slack's API, but `channels` keys may be human-readable names — a job resolves
+`route.id ?? key`, and `deskmate sync` warns when the result doesn't look like a
+Slack conversation id (`^[CGD][A-Z0-9]+$`):
+
+```ts
+channels: {
+  product: { deskmate: "product_analyst", id: "C0123PRODUCT" },
+},
+```
+
+### What `deskmate sync` generates
+
+- **Each cron job** becomes its own `agent/schedules/job-<id>.ts`, so each gets an
+  independent Vercel Cron Job with its own cadence — the thing a single shared
+  sweep cannot express.
+- **All webhook jobs share one** generated `agent/channels/hooks.ts`, mounted at
+  the absolute route `POST /eve/v1/hooks/:job`. It verifies the signature, resolves
+  the job by the `:job` path segment, and hands off via `receive()` inside
+  `waitUntil` — returning `202` immediately so the caller never blocks on agent work.
+- Generated files for a job that's removed or `enabled: false` are **deleted** on
+  the next sync — `deskmate sync` owns `agent/**`, and a stale schedule keeps
+  firing forever otherwise.
+
+### Webhook signature (`DESKMATE_HOOK_SECRET`)
+
+A webhook job authenticates the same way Slack does: sign the timestamp together
+with the raw body, so an intercepted request can't be replayed later.
+
+```
+x-deskmate-timestamp: <unix seconds>
+x-deskmate-signature: sha256=<hmac-sha256(DESKMATE_HOOK_SECRET, "<timestamp>.<raw body>")>
+```
+
+Verification is constant-time, rejects a request with no configured secret
+(`503`, not "accept anything"), and enforces a five-minute replay window. Set the
+secret once and it's read per request, so rotating it takes effect without a
+rebuild:
+
+```bash
+vercel env add DESKMATE_HOOK_SECRET production --value "$(openssl rand -hex 32)"
+```
+
+Sign a request from whatever system emits the event with `signHookBody`
+(`@deskmate/core/jobs`) — this is the copy-pasteable reference implementation:
+
+```ts
+import { signHookBody } from "@deskmate/core/jobs";
+
+const secret = process.env.DESKMATE_HOOK_SECRET!;
+const body = JSON.stringify({ event: "feedback.created", data: { id: "f1", message: "…" } });
+const timestamp = String(Math.floor(Date.now() / 1000));
+
+await fetch("https://your-app.example.com/eve/v1/hooks/feedback_triage", {
+  method: "POST",
+  headers: {
+    "content-type": "application/json",
+    "x-deskmate-timestamp": timestamp,
+    "x-deskmate-signature": signHookBody(secret, timestamp, body),
+  },
+  body,
+});
+```
+
+### Verifying locally
+
+Production builds don't mount a dispatch route for cron jobs, so this is the only
+way to run one without waiting for a tick. Start the dev server (`eve dev` prints
+the port it bound — `2000` by default, differing from the session-endpoint example
+above depending on your installed `eve` version) with the hook secret exported:
+
+```bash
+export DESKMATE_HOOK_SECRET=dev-secret
+eve dev &
+curl -X POST http://127.0.0.1:2000/eve/v1/dev/schedules/job-conversation_review
+```
+
+Expected: `{"scheduleId":"job-conversation_review","sessionIds":["…"]}` — proof
+`eve` discovered and mounted the generated schedule.
+
+Then sign and send a webhook, matching the scheme above:
+
+```bash
+BODY='{"job":"feedback_triage","event":"feedback.created","data":{"id":"f1","message":"hi"}}'
+TS=$(date +%s)
+SIG="sha256=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$DESKMATE_HOOK_SECRET" -hex | sed 's/^.* //')"
+curl -i -X POST http://127.0.0.1:2000/eve/v1/hooks/feedback_triage \
+  -H "content-type: application/json" \
+  -H "x-deskmate-timestamp: $TS" -H "x-deskmate-signature: $SIG" -d "$BODY"
+```
+
+Expected `202`. Repeat with a mangled signature (flip a character in `$SIG`) and
+expect `401`.
+
 ## Caveats (honest)
 
 - **Node 24 is required.** The `deskmate.config.ts` config is loaded as TypeScript via
