@@ -434,3 +434,41 @@ GITHUB_APP_SLUG=`
 
   return `${preamble}${body}${memory}${coding}${oauthBlock}\n`;
 }
+
+/**
+ * `agent/schedules/job-<id>.ts` — one cron job. Each job gets its own file so each
+ * becomes its own Vercel Cron Job with an independent cadence (the shared sweep
+ * cannot express that). The spec is JSON-encoded, which is what keeps a brief
+ * containing backticks or `${}` from breaking the generated module.
+ */
+export function renderJobSchedule(input: {
+  jobId: string;
+  cron: string;
+  channelId: string;
+  job: unknown;
+}): string {
+  return `${BANNER}
+import { createJobSchedule } from "@deskmate/core/jobs";
+import slack from "../channels/slack.js";
+
+export default createJobSchedule({
+  cron: ${JSON.stringify(input.cron)},
+  channelId: ${JSON.stringify(input.channelId)},
+  slack,
+  job: ${JSON.stringify(input.job, null, 2)},
+});
+`;
+}
+
+/**
+ * `agent/channels/hooks.ts` — ONE channel serving every webhook job, mounted at
+ * /eve/v1/hooks/:job. Emitted only when at least one job declares `webhook: true`.
+ */
+export function renderHooksChannel(jobs: Record<string, unknown>): string {
+  return `${BANNER}
+import { createHooksChannel } from "@deskmate/core/jobs";
+import slack from "../channels/slack.js";
+
+export default createHooksChannel(${JSON.stringify(jobs, null, 2)}, { slack });
+`;
+}
