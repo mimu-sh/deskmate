@@ -318,7 +318,7 @@ export function planSync(team: TeamConfig, cwd: string): SyncPlan {
 
   const hooksPath = join(cwd, "agent", "channels", "hooks.ts");
   if (Object.keys(hookJobs).length > 0) {
-    out("agent/channels/hooks.ts", renderHooksChannel(hookJobs as never));
+    out("agent/channels/hooks.ts", renderHooksChannel(hookJobs));
   } else if (existsSync(hooksPath)) {
     deletes.push(hooksPath);
   }

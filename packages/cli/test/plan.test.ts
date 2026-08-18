@@ -504,4 +504,25 @@ describe("planSync jobs", () => {
     expect(planSync(none, cwd).deletes).toContain(stale);
     rmSync(stale, { force: true });
   });
+
+  it("deletes a generated hooks channel when the last webhook job is gone", () => {
+    const hooks = join(cwd, "agent/channels/hooks.ts");
+    mkdirSync(join(cwd, "agent/channels"), { recursive: true });
+    writeFileSync(hooks, "// old\n");
+    // jobsTeam has only a cron job, so no webhook job remains.
+    expect(planSync(jobsTeam, cwd).deletes).toContain(hooks);
+    rmSync(hooks, { force: true });
+  });
+
+  it("deletes the stale schedule of a job that is disabled rather than removed", () => {
+    const stale = join(cwd, "agent/schedules/job-review.ts");
+    mkdirSync(join(cwd, "agent/schedules"), { recursive: true });
+    writeFileSync(stale, "// old\n");
+    const off = {
+      ...jobsTeam,
+      jobs: { review: { ...jobsTeam.jobs.review, enabled: false } },
+    } as unknown as TeamConfig;
+    expect(planSync(off, cwd).deletes).toContain(stale);
+    rmSync(stale, { force: true });
+  });
 });
