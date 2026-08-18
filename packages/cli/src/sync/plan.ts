@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { TeamConfig } from "@deskmate/core";
+import { isSlackChannelId, resolveChannelTarget } from "@deskmate/core";
 import {
   renderAvatarsChannel,
   renderChannelRoutes,
@@ -9,6 +10,8 @@ import {
   renderEnvExample,
   renderEveChannel,
   renderFrontDeskInstructions,
+  renderHooksChannel,
+  renderJobSchedule,
   renderMemoryInstructions,
   renderMemoryReflectionSchedule,
   renderMemoryTool,
@@ -251,6 +254,73 @@ export function planSync(team: TeamConfig, cwd: string): SyncPlan {
     out("agent/schedules/memory-reflection.ts", renderMemoryReflectionSchedule(memoryIds, team.memory?.reflect?.cron));
   } else if (existsSync(reflectPath)) {
     deletes.push(reflectPath);
+  }
+
+  // ── Proactive jobs ──────────────────────────────────────────────────────────
+  // One schedule file per cron job (so each gets its own Vercel Cron Job and its own
+  // cadence) and ONE hooks channel for every webhook job. sync OWNS agent/**, so any
+  // previously generated file for a job that is gone or disabled must be DELETED —
+  // a stale schedule keeps firing forever otherwise.
+  // `team.jobs` is only guaranteed by zod's `.default({})` when the config went through
+  // `defineTeam`; several pre-existing test fixtures in this file are hand-built objects
+  // cast straight to `TeamConfig` (no `jobs` key at all), so guard with `?? {}`.
+  const activeJobs = Object.entries(team.jobs ?? {}).filter(([, j]) => j.enabled);
+  const hookJobs: Record<string, unknown> = {};
+  const jobFiles = new Set<string>();
+
+  for (const [jobId, job] of activeJobs) {
+    const d = team.deskmates[job.deskmate];
+    const route = team.channels[job.channel];
+    const channelId = resolveChannelTarget(job.channel, route);
+    if (!isSlackChannelId(channelId)) {
+      warnings.push(
+        `job "${jobId}": channel "${job.channel}" does not resolve to a Slack conversation id — ` +
+          `set \`id: "C…"\` on that channel, or the job's output has nowhere to land.`,
+      );
+    }
+
+    const briefFile = job.brief ?? `${jobId}.md`;
+    const briefPath = join(cwd, "roles", d.role, "jobs", briefFile);
+    let brief: string;
+    if (existsSync(briefPath)) {
+      brief = readFileSync(briefPath, "utf8").trim();
+    } else {
+      brief = `<!-- TODO: no brief found at roles/${d.role}/jobs/${briefFile}. Add one, then re-run \`deskmate sync\`. -->`;
+      warnings.push(`job "${jobId}": no brief at roles/${d.role}/jobs/${briefFile} — the run will have no instructions.`);
+    }
+
+    const spec = {
+      jobId,
+      deskmate: job.deskmate,
+      displayName: d.displayName,
+      brief,
+      ceiling: job.ceiling,
+      maxItems: job.maxItems,
+      ...(job.cron ? { window: job.window } : {}),
+      ...(job.handoff ? { handoff: job.handoff } : {}),
+    };
+
+    if (job.cron) {
+      const rel = `agent/schedules/job-${jobId}.ts`;
+      out(rel, renderJobSchedule({ jobId, cron: job.cron, channelId, job: spec }));
+      jobFiles.add(rel);
+    } else {
+      hookJobs[jobId] = { ...spec, channelId };
+    }
+  }
+
+  // Stale per-job schedules: anything matching job-*.ts we did not just write.
+  const schedulesDir = join(cwd, "agent", "schedules");
+  for (const name of tsFiles(schedulesDir)) {
+    if (!name.startsWith("job-")) continue;
+    if (!jobFiles.has(`agent/schedules/${name}`)) deletes.push(join(schedulesDir, name));
+  }
+
+  const hooksPath = join(cwd, "agent", "channels", "hooks.ts");
+  if (Object.keys(hookJobs).length > 0) {
+    out("agent/channels/hooks.ts", renderHooksChannel(hookJobs as never));
+  } else if (existsSync(hooksPath)) {
+    deletes.push(hooksPath);
   }
 
   return { writes, deletes, warnings };

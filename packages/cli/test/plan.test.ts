@@ -423,3 +423,85 @@ describe("planSync", () => {
     expect((skill?.contents as Buffer).toString("utf8")).toBe(SKILL_MD);
   });
 });
+
+const jobsTeam = {
+  ...fixtureTeam,
+  connections: { ...fixtureTeam.connections, githubwrite: { kind: "mcp", env: "GITHUB", write: true } },
+  deskmates: {
+    ...fixtureTeam.deskmates,
+    product_analyst: { ...fixtureTeam.deskmates.product_analyst, reads: ["mixpanel", "githubwrite"] },
+  },
+  channels: { "ask-product": { deskmate: "product_analyst", id: "C0123ABC" } },
+  jobs: {
+    review: {
+      deskmate: "product_analyst", channel: "ask-product", cron: "0 6 * * *",
+      ceiling: "issue", window: "24h", maxItems: 3, enabled: true,
+    },
+  },
+} as unknown as TeamConfig;
+
+describe("planSync jobs", () => {
+  beforeAll(() => {
+    mkdirSync(join(cwd, "roles/product_analyst/jobs"), { recursive: true });
+    writeFileSync(join(cwd, "roles/product_analyst/jobs/review.md"), "Read the conversations.\n");
+  });
+
+  it("emits one schedule file per cron job, carrying the brief and resolved id", () => {
+    const file = find(planSync(jobsTeam, cwd), "agent/schedules/job-review.ts");
+    expect(file).toBeDefined();
+    expect(String(file!.contents)).toContain('"brief": "Read the conversations."');
+    expect(String(file!.contents)).toContain('channelId: "C0123ABC"');
+  });
+
+  it("emits no hooks channel when no job uses a webhook", () => {
+    expect(paths(planSync(jobsTeam, cwd))).not.toContain(join(cwd, "agent/channels/hooks.ts"));
+  });
+
+  it("emits exactly one hooks channel for any number of webhook jobs", () => {
+    const withHooks = {
+      ...jobsTeam,
+      jobs: {
+        review: { ...jobsTeam.jobs.review, cron: undefined, webhook: true },
+        other: { ...jobsTeam.jobs.review, cron: undefined, webhook: true, ceiling: "digest" },
+      },
+    } as unknown as TeamConfig;
+    const ps = paths(planSync(withHooks, cwd));
+    expect(ps.filter((p) => p === join(cwd, "agent/channels/hooks.ts"))).toHaveLength(1);
+    expect(ps.some((p) => p.includes("agent/schedules/job-"))).toBe(false);
+  });
+
+  it("warns and stubs the brief when the role file is missing", () => {
+    const missing = {
+      ...jobsTeam,
+      jobs: { absent: { ...jobsTeam.jobs.review } },
+    } as unknown as TeamConfig;
+    const plan = planSync(missing, cwd);
+    expect(plan.warnings.join("\n")).toContain("roles/product_analyst/jobs/absent.md");
+    expect(String(find(plan, "agent/schedules/job-absent.ts")!.contents)).toContain("TODO");
+  });
+
+  it("warns when the target channel does not resolve to a Slack id", () => {
+    const named = {
+      ...jobsTeam,
+      channels: { "ask-product": { deskmate: "product_analyst" } },
+    } as unknown as TeamConfig;
+    expect(planSync(named, cwd).warnings.join("\n")).toMatch(/ask-product.*Slack conversation id/s);
+  });
+
+  it("treats a disabled job as absent", () => {
+    const off = {
+      ...jobsTeam,
+      jobs: { review: { ...jobsTeam.jobs.review, enabled: false } },
+    } as unknown as TeamConfig;
+    expect(paths(planSync(off, cwd))).not.toContain(join(cwd, "agent/schedules/job-review.ts"));
+  });
+
+  it("deletes a generated schedule for a job that is gone", () => {
+    const stale = join(cwd, "agent/schedules/job-stale.ts");
+    mkdirSync(join(cwd, "agent/schedules"), { recursive: true });
+    writeFileSync(stale, "// old\n");
+    const none = { ...jobsTeam, jobs: {} } as unknown as TeamConfig;
+    expect(planSync(none, cwd).deletes).toContain(stale);
+    rmSync(stale, { force: true });
+  });
+});
