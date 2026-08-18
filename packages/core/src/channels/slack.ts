@@ -3,6 +3,7 @@ import { defaultSlackAuth, slackChannel } from "eve/channels/slack";
 import { resolveRoute, type ChannelRoute } from "../channel-routes.js";
 import { chunkMarkdown, deskmateSlackIdentity } from "../deskmate-identity.js";
 import { maxTurns, nextConveneDecision, type ConveneState } from "../convene.js";
+import { inputRequestedHandler } from "./slack-approvals.js";
 import type { Roster } from "../roster.js";
 
 // Slack surface for Deskmate. Users summon the team by tagging @deskmate; the
@@ -117,6 +118,10 @@ export function createSlackChannel(
           }
         }
       },
+      // Render each pending HITL request (approval/question) as a per-tool card
+      // and post it AS the requesting deskmate when one is active and the thread is
+      // anchored; otherwise post under the shared bot. See slack-approvals.ts.
+      "input.requested": inputRequestedHandler(roster),
       // Render a convene turn: the root called deskmate_says to voice a deskmate.
       // Post its text into the thread under that deskmate's identity, bounded by the
       // per-conversation turn cap, and mark the turn "convened" so message.completed

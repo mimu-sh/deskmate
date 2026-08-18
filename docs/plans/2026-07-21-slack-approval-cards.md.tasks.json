@@ -1,0 +1,12 @@
+{
+  "planPath": "docs/plans/2026-07-21-slack-approval-cards.md",
+  "tasks": [
+    {"id": 1, "subject": "Task 1: Approval card core + eve resume contract (record_decision)", "status": "completed"},
+    {"id": 2, "subject": "Task 2: forget (danger) and open_pull_request descriptors", "status": "completed", "blockedBy": [1]},
+    {"id": 3, "subject": "Task 3: Generic fallback for unknown tools", "status": "completed", "blockedBy": [1]},
+    {"id": 4, "subject": "Task 4: Question parity (ask_question: select + freeform + option buttons)", "status": "completed", "blockedBy": [1]},
+    {"id": 5, "subject": "Task 5: inputRequestedHandler + wire into createSlackChannel", "status": "completed", "blockedBy": [1, 4]},
+    {"id": 6, "subject": "Task 6: Verify end-to-end and finish the branch", "status": "completed", "blockedBy": [5]}
+  ],
+  "lastUpdated": "2026-07-21T20:35:00Z"
+}
