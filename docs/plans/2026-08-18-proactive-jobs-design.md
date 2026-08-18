@@ -86,9 +86,10 @@ which fixes the same latent bug there.
 - `deskmate` and `channel` must exist.
 - Exactly one of `cron` / `webhook`.
 - `window` matches `^\d+[hd]$`.
-- `ceiling: "issue"` requires the deskmate to read a connection marked `write`.
-- `ceiling: "pr"` requires a coding deskmate — named by `handoff`, or inferred
-  when the team has exactly one. Ambiguity is an error, not a guess.
+- Ceilings are cumulative (`pr` ⊃ `issue` ⊃ `digest`), so any ceiling above
+  `digest` requires the deskmate to read a connection marked `write`.
+- `ceiling: "pr"` additionally requires a coding deskmate — named by `handoff`, or
+  inferred when the team has exactly one. Ambiguity is an error, not a guess.
 
 ### What sync generates
 
@@ -119,8 +120,8 @@ firing forever otherwise — the same reason the sweep renderer already deletes.
 ### The autonomy ceiling
 
 `digest` posts findings and files nothing. `issue` may file up to `maxItems`.
-`pr` may hand one well-scoped item to the coding deskmate, whose existing
-approval gate still stands before any PR opens.
+`pr` may do everything `issue` may, and additionally hand one well-scoped item to
+the coding deskmate, whose existing approval gate still stands before any PR opens.
 
 This is instruction-enforced and capability-gated, not sandboxed. Config-time
 validation guarantees a job's deskmate *can* do what its ceiling allows, and a
