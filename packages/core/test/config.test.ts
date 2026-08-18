@@ -232,3 +232,22 @@ describe("coding config", () => {
     ).toThrow(/single .*org|org "acme"/i);
   });
 });
+
+it("defaults a connection to read-only and accepts an explicit write flag", () => {
+  const team = defineTeam({
+    connections: { postgres: { kind: "mcp", env: "POSTGRES" },
+                   githubwrite: { kind: "mcp", env: "GITHUB", write: true } },
+    deskmates: {}, channels: {},
+  });
+  expect(team.connections.postgres.write).toBe(false);
+  expect(team.connections.githubwrite.write).toBe(true);
+});
+
+it("accepts an explicit Slack id on a channel route", () => {
+  const team = defineTeam({
+    connections: {},
+    deskmates: { pa: { role: "pa", emoji: ":x:", displayName: "PA", summary: "s" } },
+    channels: { "ask-product": { deskmate: "pa", id: "C0123ABC" } },
+  });
+  expect(team.channels["ask-product"].id).toBe("C0123ABC");
+});

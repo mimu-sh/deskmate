@@ -65,3 +65,31 @@ describe("watchDisabled", () => {
     if (prev === undefined) delete process.env.DESKMATE_WATCH_DISABLED; else process.env.DESKMATE_WATCH_DISABLED = prev;
   });
 });
+
+import { resolveChannelTarget, isSlackChannelId } from "../src/channel-routes.js";
+
+describe("resolveChannelTarget", () => {
+  it("prefers the route's explicit Slack id over the config key", () => {
+    // Routed through a ChannelRoute-typed variable (not an inline literal) so TS's
+    // excess-property check doesn't trip on `deskmate` against the narrower
+    // `{ id?: string } | null` parameter type of resolveChannelTarget.
+    const route: ChannelRoute = { deskmate: "pa", id: "C0123ABC" };
+    expect(resolveChannelTarget("ask-product", route)).toBe("C0123ABC");
+  });
+  it("falls back to the key when no id is declared", () => {
+    const route: ChannelRoute = { deskmate: "pa" };
+    expect(resolveChannelTarget("C0456DEF", route)).toBe("C0456DEF");
+  });
+  it("falls back to the key when the route is missing entirely", () => {
+    expect(resolveChannelTarget("C0456DEF", null)).toBe("C0456DEF");
+  });
+});
+
+describe("isSlackChannelId", () => {
+  it.each(["C0123ABC", "G07ABCDEF", "D0ABC123"])("accepts %s", (v) => {
+    expect(isSlackChannelId(v)).toBe(true);
+  });
+  it.each(["ask-product", "c0123abc", "", "#ask-product"])("rejects %s", (v) => {
+    expect(isSlackChannelId(v)).toBe(false);
+  });
+});

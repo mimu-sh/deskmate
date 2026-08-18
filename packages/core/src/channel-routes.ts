@@ -15,7 +15,24 @@ export type ChannelWatch = {
   digest?: boolean;                      // include in the scheduled sweep (Phase 2)
 };
 
-export type ChannelRoute = { deskmate: string; lock?: boolean; watch?: ChannelWatch };
+export type ChannelRoute = { deskmate: string; id?: string; lock?: boolean; watch?: ChannelWatch };
+
+/** Slack conversation ids: public (C), private group (G), and DM (D). */
+const SLACK_CHANNEL_ID_RE = /^[CGD][A-Z0-9]+$/;
+
+/** True when `value` looks like a Slack conversation id rather than a channel name. */
+export function isSlackChannelId(value: string): boolean {
+  return SLACK_CHANNEL_ID_RE.test(value);
+}
+
+/**
+ * The value to hand to `receive({ target: { channelId } })`. Config keys may be
+ * channel NAMES (resolveRoute accepts either), but Slack's API needs an id, so an
+ * explicit `id` on the route always wins.
+ */
+export function resolveChannelTarget(key: string, route?: { id?: string } | null): string {
+  return route?.id ?? key;
+}
 
 export const CHANNEL_ROUTES: Record<string, ChannelRoute> = {
   // "C0123INCIDENTS": { deskmate: "devops", lock: true },

@@ -1,4 +1,5 @@
 import { defineSchedule } from "eve/schedules";
+import { resolveChannelTarget } from "../channel-routes.js";
 import type { ChannelRoute } from "../channel-routes.js";
 import type { Roster } from "../roster.js";
 
@@ -15,7 +16,7 @@ export type SweepTarget = { channelId: string; deskmate: string };
 export function sweepTargets(routes: Record<string, ChannelRoute>): SweepTarget[] {
   return Object.entries(routes)
     .filter(([, r]) => r.watch?.digest === true && r.watch?.post === true)
-    .map(([channelId, r]) => ({ channelId, deskmate: r.deskmate }));
+    .map(([key, r]) => ({ channelId: resolveChannelTarget(key, r), deskmate: r.deskmate }));
 }
 
 /**

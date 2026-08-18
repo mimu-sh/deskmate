@@ -6,6 +6,9 @@ const ConnectionConfig = z
     env: z.string().optional(), // token model → <ENV>_MCP_URL/_TOKEN
     connect: z.string().min(1).optional(), // oauth model → app-scoped Vercel Connect connector UID
     service: z.string().min(1).optional(), // oauth model → Connect service id for `vercel connect create`
+    // Declares that this connection can mutate the remote system. Consumed by job
+    // ceiling validation; read-only is the default and the overwhelming majority.
+    write: z.boolean().default(false),
   })
   .refine((c) => !(c.env && c.connect), {
     message: "a connection uses either `env` (token) or `connect` (oauth), not both",
@@ -69,6 +72,9 @@ const ChannelWatch = z.object({
 // `frontDesk` field above documents with `.prefault({})`.
 const ChannelRoute = z.object({
   deskmate: z.string(),
+  // The Slack conversation id, when the key is a human-readable name. `receive()`
+  // hands `target.channelId` straight to Slack, which cannot resolve a bare name.
+  id: z.string().min(1).optional(),
   lock: z.boolean().optional(),
   watch: ChannelWatch.optional(),
 });
