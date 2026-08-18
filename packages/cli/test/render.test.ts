@@ -256,6 +256,28 @@ describe("renderEnvExample", () => {
     expect(out).not.toContain("DATABASE_URL");
   });
 
+  it("omits DESKMATE_HOOK_SECRET when no job uses a webhook", () => {
+    const out = renderEnvExample(fixtureTeam);
+    expect(out).not.toContain("DESKMATE_HOOK_SECRET");
+  });
+
+  it("scaffolds DESKMATE_HOOK_SECRET with a signature-scheme comment when a job uses a webhook", () => {
+    const withWebhookJob = {
+      ...fixtureTeam,
+      jobs: {
+        feedback_triage: {
+          deskmate: "product_analyst", channel: "ask-product", webhook: true,
+          ceiling: "issue", maxItems: 3, enabled: true,
+        },
+      },
+    } as unknown as TeamConfig;
+    const out = renderEnvExample(withWebhookJob);
+    expect(out).toContain("DESKMATE_HOOK_SECRET=");
+    expect(out).toContain("x-deskmate-signature");
+    expect(out).toContain("x-deskmate-timestamp");
+    expect(out).toContain("503");
+  });
+
   it("surfaces DATABASE_URL (commented) when a deskmate opts into memory", () => {
     const withMemory = {
       ...fixtureTeam,
@@ -472,7 +494,11 @@ describe("renderHooksChannel", () => {
 
   it("imports the hooks factory and the slack channel", () => {
     expect(out).toContain('import { createHooksChannel } from "@deskmate/core/jobs";');
-    expect(out).toContain('import slack from "../channels/slack.js";');
+    // agent/channels/hooks.ts and agent/channels/slack.ts are SIBLINGS — the
+    // import must be "./slack.js", not "../channels/slack.js" (which only
+    // "works" because it normalizes back to the same file from this directory).
+    expect(out).toContain('import slack from "./slack.js";');
+    expect(out).not.toContain('import slack from "../channels/slack.js";');
   });
   it("embeds each job keyed by id", () => {
     expect(out).toContain('"feedback_triage"');

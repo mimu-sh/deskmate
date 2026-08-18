@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { TeamConfig } from "@deskmate/core";
 import { isSlackChannelId, resolveChannelTarget } from "@deskmate/core";
+import type { HookJob } from "@deskmate/core/jobs";
 import {
   renderAvatarsChannel,
   renderChannelRoutes,
@@ -265,7 +266,7 @@ export function planSync(team: TeamConfig, cwd: string): SyncPlan {
   // `defineTeam`; several pre-existing test fixtures in this file are hand-built objects
   // cast straight to `TeamConfig` (no `jobs` key at all), so guard with `?? {}`.
   const activeJobs = Object.entries(team.jobs ?? {}).filter(([, j]) => j.enabled);
-  const hookJobs: Record<string, unknown> = {};
+  const hookJobs: Record<string, HookJob> = {};
   const jobFiles = new Set<string>();
 
   for (const [jobId, job] of activeJobs) {
@@ -319,6 +320,10 @@ export function planSync(team: TeamConfig, cwd: string): SyncPlan {
   const hooksPath = join(cwd, "agent", "channels", "hooks.ts");
   if (Object.keys(hookJobs).length > 0) {
     out("agent/channels/hooks.ts", renderHooksChannel(hookJobs));
+    warnings.push(
+      "webhook jobs are configured — set DESKMATE_HOOK_SECRET in your deployment env (see the " +
+        "generated .env.example), or the hooks channel returns 503 for every request.",
+    );
   } else if (existsSync(hooksPath)) {
     deletes.push(hooksPath);
   }

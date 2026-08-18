@@ -470,6 +470,18 @@ describe("planSync jobs", () => {
     expect(ps.some((p) => p.includes("agent/schedules/job-"))).toBe(false);
   });
 
+  it("warns to set DESKMATE_HOOK_SECRET when a webhook job is configured", () => {
+    const withHooks = {
+      ...jobsTeam,
+      jobs: { review: { ...jobsTeam.jobs.review, cron: undefined, webhook: true } },
+    } as unknown as TeamConfig;
+    expect(planSync(withHooks, cwd).warnings.join("\n")).toContain("DESKMATE_HOOK_SECRET");
+  });
+
+  it("does not warn about DESKMATE_HOOK_SECRET when no job uses a webhook", () => {
+    expect(planSync(jobsTeam, cwd).warnings.join("\n")).not.toContain("DESKMATE_HOOK_SECRET");
+  });
+
   it("warns and stubs the brief when the role file is missing", () => {
     const missing = {
       ...jobsTeam,
