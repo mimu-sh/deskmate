@@ -124,10 +124,15 @@ firing forever otherwise — the same reason the sweep renderer already deletes.
 the coding deskmate, whose existing approval gate still stands before any PR opens.
 
 This is instruction-enforced and capability-gated, not sandboxed. Config-time
-validation guarantees a job's deskmate *can* do what its ceiling allows, and a
-`digest` job's deskmate holds no write connection to misuse. That is the honest
-boundary: the ceiling narrows what a job is told to do and what it is equipped to
-do, and it does not intercept tool calls.
+validation guarantees a job's deskmate *can* do what its ceiling allows — anything
+above `digest` requires the deskmate to read a connection marked `write: true`, or
+config validation rejects the job outright — but nothing intercepts tool calls at
+run time. Note that this is a per-JOB guarantee, not a per-deskmate one: ceilings
+are declared per job, but write connections are read per deskmate, so a deskmate
+that also runs any `issue`- or `pr`-ceiling job carries that same write capability
+into every `digest` job it runs too. That is the honest boundary: the ceiling
+narrows what a job is told to do and what it is equipped to do, and it does not
+intercept tool calls.
 
 ### Deduplication
 
@@ -187,7 +192,7 @@ that `eve build` rejects, and that failure would otherwise surface only in a
 remote build log.
 
 **Manual:** `eve dev`, then
-`curl -X POST localhost:3000/eve/v1/dev/schedules/job-<id>` fires a cron job once
+`curl -X POST localhost:2000/eve/v1/dev/schedules/job-<id>` fires a cron job once
 out of band, and a signed curl to `/eve/v1/hooks/<job>` exercises the webhook
 path. Production builds do not mount the dispatch route, so this is the only way
 to run a job without waiting for a tick.

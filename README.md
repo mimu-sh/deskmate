@@ -135,7 +135,7 @@ directly:
 
 ```bash
 eve dev   # local TUI + HTTP session endpoint; pick a model with /model
-curl -s -X POST http://127.0.0.1:3000/eve/v1/session \
+curl -s -X POST http://127.0.0.1:2000/eve/v1/session \
   -H 'content-type: application/json' \
   -d '{"message":"how are signups doing this week?"}' -i | grep -i x-eve-session-id
 ```
@@ -715,12 +715,25 @@ await fetch("https://your-app.example.com/eve/v1/hooks/feedback_triage", {
 });
 ```
 
+### The shared-secret ceiling
+
+**One `DESKMATE_HOOK_SECRET` gates every webhook job in the team, and the inbound
+`:job` path segment (`params.job`) picks which one runs.** A signature proves the
+request came from someone who holds the secret — it says nothing about which job
+they meant to invoke. So any sender able to sign one event for `feedback_triage`
+can sign that same event for `POST /eve/v1/hooks/<any-other-webhook-job>` too,
+including one with `ceiling: "pr"`. **The effective autonomy of the whole hooks
+surface is therefore the MAXIMUM ceiling across all webhook jobs, not each job's
+own ceiling** — a team that wants a `pr`-ceiling job to stay meaningfully more
+restricted than its `digest`-ceiling siblings needs per-job secrets or a
+higher-level gateway; `deskmate` doesn't provide either today. Keep this in mind
+when deciding which jobs are worth exposing as webhooks at all.
+
 ### Verifying locally
 
 Production builds don't mount a dispatch route for cron jobs, so this is the only
-way to run one without waiting for a tick. Start the dev server (`eve dev` prints
-the port it bound — `2000` by default, differing from the session-endpoint example
-above depending on your installed `eve` version) with the hook secret exported:
+way to run one without waiting for a tick. Start the dev server (`eve dev` binds
+port `2000` by default) with the hook secret exported:
 
 ```bash
 export DESKMATE_HOOK_SECRET=dev-secret
@@ -770,6 +783,11 @@ expect `401`.
 - **One shared Slack identity.** This Eve version doesn't expose a per-reply name/icon, so
   every deskmate answers under one **Deskmate** bot. The generated `agent/lib/deskmates.ts`
   roster is the seam for per-deskmate identity later.
+- **Vercel's per-plan Cron Job quota.** Each cron job in `jobs` becomes its own Vercel Cron
+  Job (see [What `deskmate sync` generates](#what-deskmate-sync-generates)), and Vercel caps
+  how many a project may declare per plan (Hobby is the tightest). Declaring more cron jobs
+  than your plan allows is a hard deploy failure, not a warning — check your plan's limit
+  before adding several.
 
 ## Monorepo layout (for contributors)
 
