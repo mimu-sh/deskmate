@@ -27,6 +27,14 @@ export function verifyHookSignature(input: VerifyHookInput): boolean {
   const tolerance = input.toleranceSec ?? DEFAULT_TOLERANCE_SEC;
   if (!secret || !signature || !timestamp) return false;
 
+  // `Number(timestamp)` alone is too permissive: it accepts whitespace-only
+  // strings (→ 0), hex ("0x10"), exponent notation ("1e9"), a leading "+", and
+  // decimals — all currently harmless only because the replay window below
+  // rejects anything far from `nowMs`. But `toleranceSec` is a caller-tunable
+  // field on `VerifyHookInput`; a consumer that widens it would silently make an
+  // out-of-format timestamp (e.g. epoch 0 via whitespace) reachable. Require a
+  // plain, non-empty run of decimal digits before converting.
+  if (!/^\d+$/.test(timestamp)) return false;
   const sentSec = Number(timestamp);
   if (!Number.isFinite(sentSec)) return false;
   if (Math.abs(nowMs / 1000 - sentSec) > tolerance) return false;

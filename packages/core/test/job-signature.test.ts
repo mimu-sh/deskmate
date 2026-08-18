@@ -47,6 +47,28 @@ describe("verifyHookSignature", () => {
   ])("rejects %s", (_label, over) => {
     expect(verifyHookSignature({ ...ok, ...(over as object) })).toBe(false);
   });
+
+  // `Number()` alone would accept all of these (whitespace → 0, hex, exponent
+  // notation, a leading "+", and decimals) — harmless today only because the
+  // replay window rejects them, but `toleranceSec` is caller-tunable, so a
+  // consumer that widens it would silently make an out-of-format timestamp
+  // reachable. The strict `^\d+$` check must reject them independent of tolerance.
+  it.each([
+    ["whitespace-only", "   "],
+    ["hex", "0x10"],
+    ["exponent notation", "1e9"],
+    ["a leading plus sign", `+${ts}`],
+    ["a decimal", `${ts}.5`],
+  ])("rejects a %s timestamp even with an unbounded tolerance", (_label, timestamp) => {
+    expect(
+      verifyHookSignature({
+        ...ok,
+        timestamp,
+        signature: signHookBody(secret, timestamp, raw),
+        toleranceSec: Number.MAX_SAFE_INTEGER,
+      }),
+    ).toBe(false);
+  });
   it("rejects an empty secret rather than trusting an unsigned request", () => {
     expect(verifyHookSignature({ ...ok, secret: "" })).toBe(false);
   });
