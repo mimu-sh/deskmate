@@ -38,7 +38,13 @@ function contract(spec: JobSpec): string {
           "items that clear the bar. Do not open pull requests and do not change any code.",
       );
       break;
-    case "pr":
+    case "pr": {
+      if (!spec.handoff) {
+        throw new Error(
+          `job "${spec.jobId}" has ceiling "pr" but no handoff deskmate — the contract must name ` +
+            `who receives the work.`,
+        );
+      }
       lines.push(
         `Post your findings to this channel, and file at most ${spec.maxItems} issue(s) for the ` +
           "items that clear the bar.",
@@ -46,6 +52,7 @@ function contract(spec: JobSpec): string {
           "implement. That deskmate's own approval gate still applies before any pull request opens.",
       );
       break;
+    }
   }
   lines.push(SILENT);
   return lines.join("\n");

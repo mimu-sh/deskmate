@@ -63,4 +63,32 @@ describe("buildJobMessage", () => {
       expect(buildJobMessage(spec({ ceiling }))).toContain("finish silently without posting");
     }
   });
+
+  it("refuses to render a pr ceiling with no handoff, rather than naming `undefined`", () => {
+    expect(() => buildJobMessage(spec({ ceiling: "pr" }))).toThrow(/no handoff deskmate/);
+  });
+
+  it("keeps the pr ceiling cumulative — it may still file issues", () => {
+    const msg = buildJobMessage(spec({ ceiling: "pr", handoff: "fullstack_engineer", maxItems: 2 }));
+    expect(msg).toContain("file at most 2 issue(s)");
+    expect(msg).toContain("hand at most ONE well-scoped item");
+  });
+
+  it("includes the dedup protocol at the pr ceiling too", () => {
+    const msg = buildJobMessage(spec({ ceiling: "pr", handoff: "fullstack_engineer" }));
+    expect(msg).toContain("label:deskmate-job");
+  });
+
+  it("permits finishing silently at the pr ceiling", () => {
+    expect(buildJobMessage(spec({ ceiling: "pr", handoff: "fullstack_engineer" })))
+      .toContain("finish silently without posting");
+  });
+
+  it("does not leak one ceiling's permissions into another", () => {
+    const digest = buildJobMessage(spec());
+    expect(digest).not.toContain("file at most");
+    expect(digest).not.toContain("hand at most");
+    const issue = buildJobMessage(spec({ ceiling: "issue" }));
+    expect(issue).not.toContain("hand at most");
+  });
 });
