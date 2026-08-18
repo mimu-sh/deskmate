@@ -134,4 +134,41 @@ describe("handleHookRequest", () => {
     expect(res.status).toBe(404);
     expect(h.receive).not.toHaveBeenCalled();
   });
+
+  describe("logging", () => {
+    it("warns with the job id on a rejected (non-2xx) path", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const h = helpers();
+      await handleHookRequest(request({ signature: null }), {
+        jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
+      });
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls[0].join(" ");
+      expect(logged).toContain("feedback_triage");
+      warnSpy.mockRestore();
+    });
+
+    it("never logs the signature, the secret, or the body", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const h = helpers();
+      await handleHookRequest(request({ signature: "sha256=deadbeef" }), {
+        jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
+      });
+      const logged = warnSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(logged).not.toContain(secret);
+      expect(logged).not.toContain("deadbeef");
+      expect(logged).not.toContain("cannot upload");
+      warnSpy.mockRestore();
+    });
+
+    it("does not warn on a successful (202) request", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const h = helpers();
+      await handleHookRequest(request(), {
+        jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
+      });
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+  });
 });

@@ -11,13 +11,13 @@ const routes = {
 
 describe("resolveRoute", () => {
   it("resolves a locked channel by name", () => {
-    expect(resolveRoute({ name: "incidents" }, routes)).toEqual({ deskmate: "devops", lock: true });
+    expect(resolveRoute({ name: "incidents" }, routes)).toEqual({ deskmate: "devops", lock: true, key: "incidents" });
   });
   it("defaults lock to false", () => {
-    expect(resolveRoute({ name: "growth" }, routes)).toEqual({ deskmate: "growth_hacker", lock: false });
+    expect(resolveRoute({ name: "growth" }, routes)).toEqual({ deskmate: "growth_hacker", lock: false, key: "growth" });
   });
   it("resolves by channel id", () => {
-    expect(resolveRoute({ id: "C0FIXEDID" }, routes)).toEqual({ deskmate: "product_analyst", lock: false });
+    expect(resolveRoute({ id: "C0FIXEDID" }, routes)).toEqual({ deskmate: "product_analyst", lock: false, key: "C0FIXEDID" });
   });
   it("returns null for an unmapped channel", () => {
     expect(resolveRoute({ name: "random", id: "Cxxx" }, routes)).toBeNull();
@@ -30,7 +30,7 @@ describe("resolveRoute — id-field fallback (inbound routing)", () => {
   };
 
   it("resolves a name-keyed route via its declared `id` field when only the id is known", () => {
-    expect(resolveRoute({ id: "C0123ABC" }, idFieldRoutes)).toEqual({ deskmate: "pa", lock: false });
+    expect(resolveRoute({ id: "C0123ABC" }, idFieldRoutes)).toEqual({ deskmate: "pa", lock: false, key: "ask-product" });
   });
 
   it("prefers a direct key match over an id-field match when both exist", () => {
@@ -40,7 +40,7 @@ describe("resolveRoute — id-field fallback (inbound routing)", () => {
       // A different, name-keyed route that also declares id: "C0AMBIG".
       "ask-other": { deskmate: "id_field_deskmate", id: "C0AMBIG" },
     };
-    expect(resolveRoute({ id: "C0AMBIG" }, ambiguous)).toEqual({ deskmate: "key_match_deskmate", lock: false });
+    expect(resolveRoute({ id: "C0AMBIG" }, ambiguous)).toEqual({ deskmate: "key_match_deskmate", lock: false, key: "C0AMBIG" });
   });
 
   it("returns null for an id that matches no key and no route's `id` field", () => {
@@ -52,8 +52,34 @@ describe("resolveRoute — id-field fallback (inbound routing)", () => {
       "ask-locked": { deskmate: "locked_deskmate", id: "C0LOCKED", lock: true },
       "ask-open": { deskmate: "open_deskmate", id: "C0OPEN" },
     };
-    expect(resolveRoute({ id: "C0LOCKED" }, lockRoutes)).toEqual({ deskmate: "locked_deskmate", lock: true });
-    expect(resolveRoute({ id: "C0OPEN" }, lockRoutes)).toEqual({ deskmate: "open_deskmate", lock: false });
+    expect(resolveRoute({ id: "C0LOCKED" }, lockRoutes)).toEqual({ deskmate: "locked_deskmate", lock: true, key: "ask-locked" });
+    expect(resolveRoute({ id: "C0OPEN" }, lockRoutes)).toEqual({ deskmate: "open_deskmate", lock: false, key: "ask-open" });
+  });
+
+  it("surfaces the matched key so a caller can look up the full route object (e.g. .watch) by it", () => {
+    const routesWithWatch = {
+      "ask-product": { deskmate: "pa", id: "C0123PRODUCT", watch: { post: true } },
+    };
+    const resolved = resolveRoute({ id: "C0123PRODUCT" }, routesWithWatch)!;
+    expect(resolved.key).toBe("ask-product");
+    expect(routesWithWatch[resolved.key as keyof typeof routesWithWatch].watch).toEqual({ post: true });
+  });
+
+  it("resolveWatch resolves the watch config for a name-keyed route carrying an explicit id " +
+    "(the slack-ambient.ts dispatch path, keyed by the matched key rather than the raw channel id)", () => {
+    const routesWithWatch = {
+      product: { deskmate: "product_analyst", id: "C0123PRODUCT", watch: { post: true, reply: true } },
+    };
+    const resolved = resolveRoute({ id: "C0123PRODUCT" }, routesWithWatch)!;
+    // The bug: indexing by the raw inbound channel id (routes[channelId]) misses
+    // entirely, because this route lives at the NAME key "product", not at
+    // "C0123PRODUCT" — ambient watch would silently never fire.
+    expect(resolveWatch(routesWithWatch["C0123PRODUCT" as keyof typeof routesWithWatch] ?? null)).toBeNull();
+    // The fix: index by the key resolveRoute actually matched.
+    expect(resolveWatch(routesWithWatch[resolved.key as keyof typeof routesWithWatch])).toMatchObject({
+      post: true,
+      reply: true,
+    });
   });
 });
 

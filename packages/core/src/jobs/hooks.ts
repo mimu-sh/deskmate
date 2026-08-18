@@ -2,6 +2,14 @@ import { defineChannel, POST } from "eve/channels";
 import { buildJobMessage, type JobSpec } from "./message.js";
 import { verifyHookSignature } from "./signature.js";
 
+// An operator watching logs must be able to tell "sender misconfigured" apart from
+// "secret rotated", "under attack", and "secret never set" — every other channel in
+// this repo logs (see slack-ambient.ts's [ambient] prefix), this one logged nothing
+// on any path. NEVER log the signature, the secret, or the request body here — the
+// job id + a fixed per-path reason is enough to diagnose without leaking anything an
+// attacker could replay or a secret an operator would need to rotate.
+const warn = (jobId: string, reason: string) => console.warn("[hooks]", `job=${jobId}`, reason);
+
 /** eve channels declare absolute route paths (cf. /eve/v1/slack, /eve/v1/github). */
 export const HOOKS_CHANNEL_ROUTE = "/eve/v1/hooks/:job";
 
@@ -29,19 +37,25 @@ export interface HookRequestContext {
  * nothing about which job ids exist.
  */
 export async function handleHookRequest(req: Request, ctx: HookRequestContext): Promise<Response> {
-  if (!ctx.secret) return new Response("hook secret not configured", { status: 503 });
+  const jobId = ctx.params.job;
+  if (!ctx.secret) {
+    warn(jobId, "rejected: DESKMATE_HOOK_SECRET is not configured");
+    return new Response("hook secret not configured", { status: 503 });
+  }
 
   // Bound the body BEFORE reading it (or immediately after, if content-length is
   // absent or lying) — this route is reachable by anyone, with or without the
   // secret, so nothing here should do unbounded work pre-authentication.
   const declared = Number(req.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_HOOK_BODY_BYTES) {
+    warn(jobId, "rejected: declared content-length exceeds the body size limit");
     return new Response("payload too large", { status: 413 });
   }
 
   const raw = await req.text();
   // A missing or lying content-length still gets bounded once the body is in hand.
   if (raw.length > MAX_HOOK_BODY_BYTES) {
+    warn(jobId, "rejected: body exceeds the size limit");
     return new Response("payload too large", { status: 413 });
   }
 
@@ -52,17 +66,24 @@ export async function handleHookRequest(req: Request, ctx: HookRequestContext): 
     timestamp: req.headers.get("x-deskmate-timestamp"),
     nowMs: ctx.nowMs,
   });
-  if (!verified) return new Response("unauthorized", { status: 401 });
+  if (!verified) {
+    warn(jobId, "rejected: signature verification failed");
+    return new Response("unauthorized", { status: 401 });
+  }
 
   // Object.hasOwn guards against `__proto__`/`constructor`/`toString` resolving to a
   // truthy Object.prototype member instead of a real (absent) job.
   const job = Object.hasOwn(ctx.jobs, ctx.params.job) ? ctx.jobs[ctx.params.job] : undefined;
-  if (!job) return new Response("unknown job", { status: 404 });
+  if (!job) {
+    warn(jobId, "rejected: no such job");
+    return new Response("unknown job", { status: 404 });
+  }
 
   let payload: unknown;
   try {
     payload = JSON.parse(raw);
   } catch {
+    warn(jobId, "rejected: body is not valid JSON");
     return new Response("invalid json", { status: 400 });
   }
 

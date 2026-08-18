@@ -39,22 +39,38 @@ export const CHANNEL_ROUTES: Record<string, ChannelRoute> = {
   // "C0456GROWTH": { deskmate: "growth_hacker" },
 };
 
-export type ResolvedRoute = { deskmate: string; lock: boolean };
+export type ResolvedRoute = { deskmate: string; lock: boolean; key: string };
+
+/**
+ * The config key `resolveRoute` matched a channel to (a name, an id, or a
+ * different name that merely declares this id via its `id` field). Callers that
+ * need the ROUTE OBJECT itself — e.g. to read `.watch` — must index `routes` by
+ * this key, not by the raw channel id: a name-keyed route declaring `id` lives at
+ * `routes[name]`, not `routes[id]`, so indexing by the raw id silently misses it.
+ */
+export function resolveRouteKey(
+  channel: { name?: string; id?: string },
+  routes: Record<string, ChannelRoute> = CHANNEL_ROUTES,
+): string | null {
+  return (
+    (channel.name && routes[channel.name] ? channel.name : undefined) ??
+    (channel.id && routes[channel.id] ? channel.id : undefined) ??
+    // Fallback: a name-keyed route that declares its Slack id explicitly. Inbound
+    // events carry only the id, so without this the `id` field would be honoured
+    // outbound (resolveChannelTarget) and ignored inbound.
+    (channel.id ? Object.keys(routes).find((k) => routes[k].id === channel.id) : undefined) ??
+    null
+  );
+}
 
 /** Resolve a channel (by name or id) to its route, or null when unmapped. */
 export function resolveRoute(
   channel: { name?: string; id?: string },
   routes: Record<string, ChannelRoute> = CHANNEL_ROUTES,
 ): ResolvedRoute | null {
-  const key =
-    (channel.name && routes[channel.name] ? channel.name : undefined) ??
-    (channel.id && routes[channel.id] ? channel.id : undefined) ??
-    // Fallback: a name-keyed route that declares its Slack id explicitly. Inbound
-    // events carry only the id, so without this the `id` field would be honoured
-    // outbound (resolveChannelTarget) and ignored inbound.
-    (channel.id ? Object.keys(routes).find((k) => routes[k].id === channel.id) : undefined);
+  const key = resolveRouteKey(channel, routes);
   if (!key) return null;
-  return { deskmate: routes[key].deskmate, lock: routes[key].lock ?? false };
+  return { deskmate: routes[key].deskmate, lock: routes[key].lock ?? false, key };
 }
 
 export const DEFAULT_REACTION_PALETTE = ["eyes", "white_check_mark", "tada", "warning", "+1"];

@@ -251,7 +251,11 @@ export function createSlackAmbientChannel(
             // direct-address thread participation above (that's like an @mention).
             if (watchDisabled()) return log("skip: DESKMATE_WATCH_DISABLED");
             const route = resolveRoute({ id: channelId }, routes);
-            const watch = resolveWatch(route ? routes[channelId] : null);
+            // Index by the KEY resolveRoute actually matched, not the raw channel id —
+            // a name-keyed route that declares its Slack id via `id:` (per the README's
+            // documented pattern) lives at routes[name], not routes[id]; indexing by the
+            // raw id would silently return undefined and ambient watch would never fire.
+            const watch = resolveWatch(route ? routes[route.key] : null);
             if (!route || !watch) return log("skip: channel not opted into watch");
 
             const { recent, messages } = await threadCtx();
