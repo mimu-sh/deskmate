@@ -8,6 +8,9 @@ export const HOOKS_CHANNEL_ROUTE = "/eve/v1/hooks/:job";
 /** A webhook-triggered job: its spec plus the resolved Slack conversation to report into. */
 export type HookJob = JobSpec & { channelId: string };
 
+/** Generous for a webhook payload; the point is to bound a pre-auth read, not to be tight. */
+export const MAX_HOOK_BODY_BYTES = 1_048_576;
+
 export interface HookRequestContext {
   jobs: Record<string, HookJob>;
   slack: unknown;
@@ -28,7 +31,20 @@ export interface HookRequestContext {
 export async function handleHookRequest(req: Request, ctx: HookRequestContext): Promise<Response> {
   if (!ctx.secret) return new Response("hook secret not configured", { status: 503 });
 
+  // Bound the body BEFORE reading it (or immediately after, if content-length is
+  // absent or lying) — this route is reachable by anyone, with or without the
+  // secret, so nothing here should do unbounded work pre-authentication.
+  const declared = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_HOOK_BODY_BYTES) {
+    return new Response("payload too large", { status: 413 });
+  }
+
   const raw = await req.text();
+  // A missing or lying content-length still gets bounded once the body is in hand.
+  if (raw.length > MAX_HOOK_BODY_BYTES) {
+    return new Response("payload too large", { status: 413 });
+  }
+
   const verified = verifyHookSignature({
     raw,
     secret: ctx.secret,
@@ -38,7 +54,9 @@ export async function handleHookRequest(req: Request, ctx: HookRequestContext): 
   });
   if (!verified) return new Response("unauthorized", { status: 401 });
 
-  const job = ctx.jobs[ctx.params.job];
+  // Object.hasOwn guards against `__proto__`/`constructor`/`toString` resolving to a
+  // truthy Object.prototype member instead of a real (absent) job.
+  const job = Object.hasOwn(ctx.jobs, ctx.params.job) ? ctx.jobs[ctx.params.job] : undefined;
   if (!job) return new Response("unknown job", { status: 404 });
 
   let payload: unknown;
@@ -67,6 +85,18 @@ export async function handleHookRequest(req: Request, ctx: HookRequestContext): 
  * without a rebuild.
  */
 export function createHooksChannel(jobs: Record<string, HookJob>, opts: { slack: unknown }) {
+  // Fail at construction, not per request: buildJobMessage throws for a pr ceiling with no
+  // handoff, and inside a route that surfaces as an uncontracted 500 on every call. eve
+  // build and `deskmate sync` run this, so a misconfigured job is caught before deploy.
+  for (const [id, job] of Object.entries(jobs)) {
+    if (job.ceiling === "pr" && !job.handoff) {
+      throw new Error(
+        `hook job "${id}" has ceiling "pr" but no handoff deskmate — the contract must name ` +
+          `who receives the work.`,
+      );
+    }
+  }
+
   return defineChannel({
     routes: [
       POST(HOOKS_CHANNEL_ROUTE, async (req, { receive, waitUntil, params }) =>

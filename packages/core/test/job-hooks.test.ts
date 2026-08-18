@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleHookRequest, type HookJob } from "../src/jobs/hooks.js";
+import { createHooksChannel, handleHookRequest, type HookJob } from "../src/jobs/hooks.js";
 import { signHookBody } from "../src/jobs/signature.js";
 
 const secret = "s3cr3t";
@@ -92,6 +92,46 @@ describe("handleHookRequest", () => {
       jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
     });
     expect(res.status).toBe(400);
+    expect(h.receive).not.toHaveBeenCalled();
+  });
+
+  it("answers 401, not 404, for a bad signature on an unknown job — no id enumeration", async () => {
+    const h = helpers();
+    const res = await handleHookRequest(request({ signature: "sha256=deadbeef" }), {
+      jobs, slack, params: { job: "no_such_job" }, secret, nowMs, ...h,
+    });
+    expect(res.status).toBe(401);
+    expect(h.receive).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized body before doing any signature work", async () => {
+    const h = helpers();
+    const big = "x".repeat(1_048_577);
+    const req = new Request("https://example.test/eve/v1/hooks/feedback_triage", {
+      method: "POST", headers: new Headers({ "content-type": "application/json" }), body: big,
+    });
+    const res = await handleHookRequest(req, {
+      jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
+    });
+    expect(res.status).toBe(413);
+    expect(h.receive).not.toHaveBeenCalled();
+  });
+
+  it("refuses to construct a channel for a pr job with no handoff", () => {
+    expect(() =>
+      createHooksChannel(
+        { bad: { ...jobs.feedback_triage, ceiling: "pr", handoff: undefined } },
+        { slack },
+      ),
+    ).toThrow(/no handoff deskmate/);
+  });
+
+  it("does not resolve a prototype key as a job", async () => {
+    const h = helpers();
+    const res = await handleHookRequest(request(), {
+      jobs, slack, params: { job: "__proto__" }, secret, nowMs, ...h,
+    });
+    expect(res.status).toBe(404);
     expect(h.receive).not.toHaveBeenCalled();
   });
 });
