@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { defineTeam, type TeamConfig } from "@deskmate/core";
 import { ensureMemoryRuntimeDep, NEON_DRIVER_PKG, NEON_DRIVER_RANGE } from "./deps.js";
+import { isValidConnectionName, connectionNameError } from "../lib/ids.js";
 import { planSync } from "./plan.js";
 
 export const CONFIG_FILE = "deskmate.config.ts";
@@ -60,6 +61,19 @@ export async function syncCommand(
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     throw new Error(`invalid ${CONFIG_FILE}: ${reason}`);
+  }
+
+  // `defineTeam` accepts snake_case connection names (underscores), but eve's `eve build`
+  // derives a connection's name from its generated filename and rejects underscores (it
+  // requires kebab-case). A multi-word name like `github_write` would therefore pass here
+  // and sync cleanly, then blow up at deploy. Enforce the eve ∩ deskmate intersection
+  // (a single lowercase word) NOW, with a message that names the conflict, so it fails at
+  // sync time instead. (A full reconciliation that accepts kebab end-to-end also needs a
+  // change in @deskmate/core's defineTeam — see lib/ids.ts.)
+  for (const name of Object.keys(team.connections)) {
+    if (!isValidConnectionName(name)) {
+      throw new Error(`invalid ${CONFIG_FILE}: ${connectionNameError(name)}`);
+    }
   }
 
   const plan = planSync(team, cwd);
