@@ -808,7 +808,7 @@ examples/
 ```
 
 ```bash
-git clone https://github.com/mama-sh/deskmate && cd deskmate
+git clone https://github.com/mimu-sh/deskmate && cd deskmate
 pnpm install
 pnpm run build:packages     # compile @deskmate/core + @deskmate/cli to dist/ (see below)
 pnpm -r typecheck
