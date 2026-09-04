@@ -20,20 +20,23 @@ describe("createJobSchedule", () => {
   });
 
   it("hands the composed message to the target channel under waitUntil", async () => {
-    const receive = vi.fn().mockResolvedValue(undefined);
+    // eve's cross-channel delivery: `to(channel, target).send(message, { auth })`.
+    const send = vi.fn().mockResolvedValue(undefined);
+    const to = vi.fn((_channel: unknown, _target: unknown) => ({ send }));
     const waitUntil = vi.fn();
     const appAuth = { authenticator: "app" };
 
     const schedule = createJobSchedule({ cron: "0 6 * * *", channelId: "C0123", slack, job });
-    await schedule.run!({ receive, waitUntil, appAuth } as never);
+    await schedule.run!({ to, waitUntil, appAuth } as never);
 
     expect(waitUntil).toHaveBeenCalledTimes(1);
-    expect(receive).toHaveBeenCalledTimes(1);
-    const [channel, args] = receive.mock.calls[0];
+    expect(to).toHaveBeenCalledTimes(1);
+    const [channel, target] = to.mock.calls[0];
+    const [message, options] = send.mock.calls[0];
     expect(channel).toBe(slack);
-    expect(args.target).toEqual({ channelId: "C0123" });
-    expect(args.auth).toBe(appAuth);
-    expect(args.message).toContain("[proactive:job:conversation_review] window: last 24h");
-    expect(args.message).toContain("file at most 3 issue(s)");
+    expect(target).toEqual({ channelId: "C0123" });
+    expect(options.auth).toBe(appAuth);
+    expect(message).toContain("[proactive:job:conversation_review] window: last 24h");
+    expect(message).toContain("file at most 3 issue(s)");
   });
 });

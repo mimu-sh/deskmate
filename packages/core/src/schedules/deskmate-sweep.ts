@@ -33,18 +33,16 @@ export function createDeskmateSweep(
   const targets = sweepTargets(routes);
   return defineSchedule({
     cron: opts.cron ?? DEFAULT_SWEEP_CRON,
-    async run({ receive, waitUntil, appAuth }) {
+    async run({ to, waitUntil, appAuth }) {
       for (const t of targets) {
         const name = roster[t.deskmate]?.displayName ?? t.deskmate;
         waitUntil(
-          receive(opts.slack as any, {
-            message:
-              `[routing] Delegate to the \`${t.deskmate}\` deskmate (${name}).\n\n` +
+          to(opts.slack as any, { channelId: t.channelId }).send(
+            `[routing] Delegate to the \`${t.deskmate}\` deskmate (${name}).\n\n` +
               `[proactive:sweep] Review recent activity in this channel. Post a short digest ` +
               `only if something genuinely warrants it; otherwise finish silently.`,
-            target: { channelId: t.channelId },
-            auth: appAuth,
-          }),
+            { auth: appAuth },
+          ),
         );
       }
     },

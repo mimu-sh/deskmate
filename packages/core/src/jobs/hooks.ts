@@ -60,7 +60,7 @@ export interface HookRequestContext {
   params: { job: string };
   secret: string | undefined;
   nowMs: number;
-  receive: (channel: never, args: unknown) => Promise<unknown>;
+  to: (channel: never, target: unknown) => { send: (message: string, options: unknown) => Promise<unknown> };
   waitUntil: (task: Promise<unknown>) => void;
 }
 
@@ -127,11 +127,9 @@ export async function handleHookRequest(req: Request, ctx: HookRequestContext): 
   // Hand off in the background and answer immediately: the sender is a product
   // request path and must never wait on an agent run.
   ctx.waitUntil(
-    ctx.receive(ctx.slack as never, {
-      message: buildJobMessage(job, payload),
-      target: { channelId: job.channelId },
-      auth: null,
-    }),
+    ctx
+      .to(ctx.slack as never, { channelId: job.channelId })
+      .send(buildJobMessage(job, payload), { auth: null }),
   );
 
   return new Response(null, { status: 202 });
@@ -157,14 +155,14 @@ export function createHooksChannel(jobs: Record<string, HookJob>, opts: { slack:
 
   return defineChannel({
     routes: [
-      POST(HOOKS_CHANNEL_ROUTE, async (req, { receive, waitUntil, params }) =>
+      POST(HOOKS_CHANNEL_ROUTE, async (req, { to, waitUntil, params }) =>
         handleHookRequest(req, {
           jobs,
           slack: opts.slack,
           params: params as { job: string },
           secret: process.env.DESKMATE_HOOK_SECRET,
           nowMs: Date.now(),
-          receive: receive as never,
+          to: to as never,
           waitUntil,
         }),
       ),
