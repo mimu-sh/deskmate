@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { doctor, loadLocalEnv, findConnectionFile, type DoctorDeps } from "../src/doctor.js";
+import { doctor, loadLocalEnv, sensitiveEnvKeys, findConnectionFile, type DoctorDeps } from "../src/doctor.js";
 
 beforeEach(() => vi.spyOn(console, "log").mockImplementation(() => {}));
 afterEach(() => vi.restoreAllMocks());
@@ -299,5 +299,74 @@ describe("findConnectionFile", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// Vercel `sensitive` env vars cannot be read back, so `vercel env pull` writes them as
+// KEY="" . Doctor loads that file, sees an empty value, and used to report the var as
+// unset — a false failure for a production env that is actually fine.
+describe("sensitive (unreadable) env vars", () => {
+  const withEnvFile = (body: string, run: (file: string) => Promise<void> | void) => {
+    const dir = mkdtempSync(join(tmpdir(), "deskmate-sens-"));
+    const file = join(dir, ".env.production.local");
+    writeFileSync(file, body);
+    return Promise.resolve(run(file)).finally(() => rmSync(dir, { recursive: true, force: true }));
+  };
+
+  it("reads back the keys a pull wrote empty", async () => {
+    await withEnvFile('REAL="abc"\nSECRET=""\nALSO_SECRET=\n', (file) => {
+      const keys = sensitiveEnvKeys(file);
+      expect(keys.has("SECRET")).toBe(true);
+      expect(keys.has("ALSO_SECRET")).toBe(true);
+      expect(keys.has("REAL")).toBe(false);
+    });
+  });
+
+  it("does not fail the GitHub App check when its env is sensitive, not missing", async () => {
+    await withEnvFile('GITHUB_APP_ID=""\nGITHUB_APP_PRIVATE_KEY=""\n', async (file) => {
+      const d = deps({
+        loadEnv: () => file,
+        loadTeam: async () =>
+          ({
+            connections: {},
+            deskmates: { eng: { coding: { repos: ["org/repo"] } } },
+            channels: {},
+            github: { org: "org" },
+          }) as any,
+        checkCodingAuth: async () => ({ ok: false, error: "set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY" }),
+      });
+      expect(await doctor([], "/proj", d)).toBe(0);
+    });
+  });
+
+  it("still fails the GitHub App check when the env is genuinely absent", async () => {
+    await withEnvFile('SOMETHING_ELSE="x"\n', async (file) => {
+      const d = deps({
+        loadEnv: () => file,
+        loadTeam: async () =>
+          ({
+            connections: {},
+            deskmates: { eng: { coding: { repos: ["org/repo"] } } },
+            channels: {},
+            github: { org: "org" },
+          }) as any,
+        checkCodingAuth: async () => ({ ok: false, error: "set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY" }),
+      });
+      expect(await doctor([], "/proj", d)).toBe(1);
+    });
+  });
+
+  it("does not probe a token connection whose token is sensitive", async () => {
+    await withEnvFile('GH_MCP_TOKEN=""\n', async (file) => {
+      const probe = vi.fn(async () => ({ reachable: true, authOk: false, tools: [] }));
+      const d = deps({
+        loadEnv: () => file,
+        loadTeam: async () => team({ gh: { kind: "mcp", env: "GH" } }),
+        resolveConnection: async () => ({ kind: "ready", url: "https://gh/mcp", headers: {}, allow: [] }),
+        probe,
+      });
+      expect(await doctor([], "/proj", d)).toBe(0);
+      expect(probe).not.toHaveBeenCalled();
+    });
   });
 });
