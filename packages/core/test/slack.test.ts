@@ -103,4 +103,16 @@ describe("turn.failed", () => {
     expect(text).toMatch(/try again/i);
     expect(text).toContain("abc-123");
   });
+  it("still posts when details cannot be serialised", async () => {
+    // `details` is typed JsonObject, but this handler is the last thing standing
+    // between a failed turn and silence. If it throws, the user gets nothing at
+    // all, which is worse than the wrong advice this override exists to fix.
+    const circular: Record<string, unknown> = { errorId: "circular-1" };
+    circular.self = circular;
+
+    const text = await runTurnFailed({ message: "Something else went wrong", details: circular });
+
+    expect(text).toMatch(/try again/i);
+    expect(text).toContain("circular-1");
+  });
 });

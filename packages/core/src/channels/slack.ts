@@ -49,12 +49,28 @@ import type { Roster } from "../roster.js";
  * work, because re-sending the same request re-runs the same oversized pass.
  */
 function isDurationFailure(message: string, details: unknown): boolean {
-  const haystack = `${message} ${details === undefined ? "" : JSON.stringify(details)}`;
+  const haystack = `${message} ${serialiseForSearch(details)}`;
   return (
     /exceeded maximum duration/i.test(haystack) ||
     /gateway_stream_timeout/i.test(haystack) ||
     /before function timeout/i.test(haystack)
   );
+}
+
+/**
+ * `JSON.stringify` for the search haystack, and it never throws. `details` is typed
+ * as a JsonObject, but this runs on the path that reports a failed turn: a throw here
+ * would leave the thread with no message at all, which is worse than the wrong advice
+ * this override exists to remove. A value that will not serialise just drops out of
+ * the haystack, and the message alone still decides.
+ */
+function serialiseForSearch(value: unknown): string {
+  if (value === undefined) return "";
+  try {
+    return JSON.stringify(value) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 /**
