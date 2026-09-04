@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0](https://github.com/mimu-sh/deskmate/compare/core-v0.4.0...core-v0.5.0) (2026-09-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** eve 0.51 requires Node >= 24, and @deskmate/core now resolves eve ^0.51.1. Consumers pinned to eve 0.19 must upgrade with it, or pnpm installs two eve copies and the channels core builds run a different eve than `eve build`.
+
+### Bug Fixes
+
+* **slack:** give duration failures advice that can actually work ([#36](https://github.com/mimu-sh/deskmate/issues/36)) ([b6643eb](https://github.com/mimu-sh/deskmate/commit/b6643ebec43770358f0ea758c5c35a0daad989bc))
+
+
+### Miscellaneous Chores
+
+* **deps:** upgrade eve to 0.51.1 and migrate off ctx.receive ([#37](https://github.com/mimu-sh/deskmate/issues/37)) ([c4220a4](https://github.com/mimu-sh/deskmate/commit/c4220a4525377e021de0b77e01df647df0d7b6d3))
+
 ## [0.4.0](https://github.com/mama-sh/deskmate/compare/core-v0.3.2...core-v0.4.0) (2026-08-18)
 
 
