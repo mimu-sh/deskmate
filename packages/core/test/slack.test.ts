@@ -55,3 +55,64 @@ describe("createSlackChannel", () => {
     ).toBe(true);
   });
 });
+
+// A turn that dies on a model-call duration limit (the Vercel AI Gateway's
+// `gateway_stream_timeout`) is NOT fixed by retrying the same request — the
+// second attempt re-runs the same oversized pass and times out again. eve's
+// default `turn.failed` handler tells the user to "try again, rephrase", which
+// is actively wrong here, so core overrides the event to give advice that works.
+describe("turn.failed", () => {
+  type Posted = { markdown?: string } | string;
+  type FailedData = { code: string; message: string; details?: Record<string, unknown>; turnId: string };
+  type EventsConfig = {
+    events: { "turn.failed": (data: FailedData, channel: unknown) => Promise<void> };
+  };
+
+  /** Run the turn.failed handler and return what it posted into the thread. */
+  const runTurnFailed = async (data: Partial<FailedData>): Promise<string> => {
+    createSlackChannel(roster);
+    const posts: Posted[] = [];
+    const channel = { thread: { post: async (p: Posted) => void posts.push(p) }, state: {} };
+    const events = (slackChannelMock.mock.calls[0]![0] as EventsConfig).events;
+    await events["turn.failed"](
+      { code: "MODEL_CALL_FAILED", message: "", turnId: "turn_0", ...data },
+      channel,
+    );
+    return posts.map((p) => (typeof p === "string" ? p : (p.markdown ?? ""))).join("\n");
+  };
+
+  it("tells the user to narrow the request when the model call outran its duration limit", async () => {
+    const text = await runTurnFailed({
+      message: "Stream exceeded maximum duration before function timeout",
+      details: { errorId: "3827723d-bea7-4dee-8588-b13f2dd10f3f" },
+    });
+
+    // The whole point: do NOT tell them to just retry, tell them to shrink the ask.
+    expect(text).toMatch(/narrow|smaller|shorter|split|less/i);
+    expect(text).not.toMatch(/try again/i);
+    // The error id still has to survive so the failure is traceable in the logs.
+    expect(text).toContain("3827723d-bea7-4dee-8588-b13f2dd10f3f");
+  });
+
+  it("keeps the generic retry advice for an unrelated failure", async () => {
+    const text = await runTurnFailed({
+      message: "Something else went wrong",
+      details: { errorId: "abc-123" },
+    });
+
+    expect(text).toMatch(/try again/i);
+    expect(text).toContain("abc-123");
+  });
+  it("still posts when details cannot be serialised", async () => {
+    // `details` is typed JsonObject, but this handler is the last thing standing
+    // between a failed turn and silence. If it throws, the user gets nothing at
+    // all, which is worse than the wrong advice this override exists to fix.
+    const circular: Record<string, unknown> = { errorId: "circular-1" };
+    circular.self = circular;
+
+    const text = await runTurnFailed({ message: "Something else went wrong", details: circular });
+
+    expect(text).toMatch(/try again/i);
+    expect(text).toContain("circular-1");
+  });
+});
