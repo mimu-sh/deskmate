@@ -12,5 +12,10 @@
       "release-type": "node",
       "initial-version": "0.1.0"
     }
-  }
+  },
+  "plugins": [
+    {
+      "type": "node-workspace"
+    }
+  ]
 }
