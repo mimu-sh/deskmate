@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.1](https://github.com/mimu-sh/deskmate/compare/cli-v0.6.0...cli-v0.6.1) (2026-09-04)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @deskmate/core bumped to 0.5.0
+
 ## [0.6.0](https://github.com/mama-sh/deskmate/compare/cli-v0.5.0...cli-v0.6.0) (2026-08-18)
 
 
