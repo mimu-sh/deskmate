@@ -38,6 +38,49 @@ import type { Roster } from "../roster.js";
 // member. Full per-deskmate identity everywhere would require a separate Slack app
 // per deskmate — which defeats the single-install model — so we accept the trade.
 
+/**
+ * Failures that mean "this pass was too big to finish", not "something went wrong".
+ *
+ * The Vercel AI Gateway aborts a model call whose stream would outlive the calling
+ * function and reports `gateway_stream_timeout` ("Stream exceeded maximum duration
+ * before function timeout"); the workflow runtime has its own replay-budget variant.
+ * eve does not classify these as retryable, so the turn is parked and its default
+ * `turn.failed` copy asks the user to "try again, rephrase" — advice that cannot
+ * work, because re-sending the same request re-runs the same oversized pass.
+ */
+function isDurationFailure(message: string, details: unknown): boolean {
+  const haystack = `${message} ${details === undefined ? "" : JSON.stringify(details)}`;
+  return (
+    /exceeded maximum duration/i.test(haystack) ||
+    /gateway_stream_timeout/i.test(haystack) ||
+    /before function timeout/i.test(haystack)
+  );
+}
+
+/**
+ * eve's error hint, reproduced: " (Name: message)". eve exports it only from an
+ * internal module, so core carries its own copy rather than reaching past the
+ * package boundary for one line of formatting.
+ */
+function errorHint(message: string, details: unknown): string {
+  const name = isRecord(details) && typeof details.name === "string" ? details.name.trim() : "";
+  const text = message.trim();
+  const shown = text.length > 160 ? `${text.slice(0, 159).trimEnd()}\u2026` : text;
+  if (name && shown) return ` (${name}: ${shown})`;
+  if (name) return ` (${name})`;
+  return shown ? ` (${shown})` : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** eve stamps every failure with an id; keep it so the thread stays traceable in the logs. */
+function errorIdLine(details: unknown): string[] {
+  const id = isRecord(details) && typeof details.errorId === "string" ? details.errorId : "";
+  return id ? ["", `_Error id: \`${id}\`_`] : [];
+}
+
 type DeskmateState = { activeDeskmateId?: string | null; activeDeskmateTurnId?: string | null };
 
 /**
@@ -107,6 +150,26 @@ export function createSlackChannel(
       return { auth, context: [directive, untrusted] };
     },
     events: {
+      // A parked turn is the end of the road for that request, so the message has to
+      // tell the user what will actually get them an answer. eve's default says "try
+      // again, rephrase" for everything; when the model call ran out of time that is
+      // the one thing guaranteed to fail again. Overriding the event REPLACES eve's
+      // default (its channel merges `{...defaultEvents, ...events}`), so this posts once.
+      async "turn.failed"(data, channel) {
+        const message = typeof data.message === "string" ? data.message : "";
+        const body = isDurationFailure(message, data.details)
+          ? [
+              "That request was too large to finish in one pass, so the model call ran out of time before it could answer.",
+              "",
+              "Narrow it and I'll get there: a shorter window, fewer accounts, or one question at a time. Re-sending it unchanged will hit the same limit.",
+            ]
+          : [
+              `I hit an error while handling your request${errorHint(message, data.details)}.`,
+              "",
+              "Please try again, rephrase, or reach out if it keeps failing.",
+            ];
+        await channel.thread.post({ markdown: [...body, ...errorIdLine(data.details)].join("\n") });
+      },
       // Note which deskmate the front desk delegated to, so the final reply can be
       // attributed to them. Subagent calls arrive as `subagent-call` actions.
       "actions.requested"(data, channel) {
