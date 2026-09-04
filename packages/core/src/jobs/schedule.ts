@@ -13,20 +13,14 @@ export interface JobScheduleOptions {
 /**
  * One cron job as its own eve schedule (and so its own Vercel Cron Job), which is
  * what lets each job carry an independent cadence. The handler owns no channel of
- * its own, so it hands the run to Slack with `receive`.
+ * its own, so it hands the run to Slack with `to(...).send(...)`.
  */
 export function createJobSchedule(opts: JobScheduleOptions) {
   const message = buildJobMessage(opts.job);
   return defineSchedule({
     cron: opts.cron,
-    async run({ receive, waitUntil, appAuth }) {
-      waitUntil(
-        receive(opts.slack, {
-          message,
-          target: { channelId: opts.channelId },
-          auth: appAuth,
-        }),
-      );
+    async run({ to, waitUntil, appAuth }) {
+      waitUntil(to(opts.slack as any, { channelId: opts.channelId }).send(message, { auth: appAuth }));
     },
   });
 }

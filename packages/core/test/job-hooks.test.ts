@@ -30,7 +30,12 @@ function request(over: { body?: string; signature?: string | null; timestamp?: s
   return new Request("https://example.test/eve/v1/hooks/feedback_triage", { method: "POST", headers, body: raw });
 }
 
-const helpers = () => ({ receive: vi.fn().mockResolvedValue(undefined), waitUntil: vi.fn() });
+// `to(channel, target).send(message, options)` — eve's cross-channel delivery API.
+// The extra `send` key rides along on the spread ctx and is simply ignored.
+const helpers = () => {
+  const send = vi.fn().mockResolvedValue(undefined);
+  return { to: vi.fn((_channel: unknown, _target: unknown) => ({ send })), send, waitUntil: vi.fn() };
+};
 
 describe("handleHookRequest", () => {
   it("accepts a signed request and hands the run to Slack", async () => {
@@ -41,11 +46,12 @@ describe("handleHookRequest", () => {
 
     expect(res.status).toBe(202);
     expect(h.waitUntil).toHaveBeenCalledTimes(1);
-    const [channel, args] = h.receive.mock.calls[0];
+    const [channel, target] = h.to.mock.calls[0];
+    const [message] = h.send.mock.calls[0];
     expect(channel).toBe(slack);
-    expect(args.target).toEqual({ channelId: "C0SUCCESS" });
-    expect(args.message).toContain("[proactive:job:feedback_triage]");
-    expect(args.message).toContain('"message": "cannot upload"');
+    expect(target).toEqual({ channelId: "C0SUCCESS" });
+    expect(message).toContain("[proactive:job:feedback_triage]");
+    expect(message).toContain('"message": "cannot upload"');
   });
 
   it("rejects an unsigned request with 401 and starts nothing", async () => {
@@ -54,7 +60,7 @@ describe("handleHookRequest", () => {
       jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
     });
     expect(res.status).toBe(401);
-    expect(h.receive).not.toHaveBeenCalled();
+    expect(h.to).not.toHaveBeenCalled();
   });
 
   it("rejects a tampered body with 401", async () => {
@@ -65,7 +71,7 @@ describe("handleHookRequest", () => {
       { jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h },
     );
     expect(res.status).toBe(401);
-    expect(h.receive).not.toHaveBeenCalled();
+    expect(h.to).not.toHaveBeenCalled();
   });
 
   it("returns 503 when no secret is configured, rather than accepting anything", async () => {
@@ -74,7 +80,7 @@ describe("handleHookRequest", () => {
       jobs, slack, params: { job: "feedback_triage" }, secret: undefined, nowMs, ...h,
     });
     expect(res.status).toBe(503);
-    expect(h.receive).not.toHaveBeenCalled();
+    expect(h.to).not.toHaveBeenCalled();
   });
 
   it("returns 404 for an unknown job", async () => {
@@ -83,7 +89,7 @@ describe("handleHookRequest", () => {
       jobs, slack, params: { job: "no_such_job" }, secret, nowMs, ...h,
     });
     expect(res.status).toBe(404);
-    expect(h.receive).not.toHaveBeenCalled();
+    expect(h.to).not.toHaveBeenCalled();
   });
 
   it("returns 400 for a signed but unparseable body", async () => {
@@ -92,7 +98,7 @@ describe("handleHookRequest", () => {
       jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
     });
     expect(res.status).toBe(400);
-    expect(h.receive).not.toHaveBeenCalled();
+    expect(h.to).not.toHaveBeenCalled();
   });
 
   it("answers 401, not 404, for a bad signature on an unknown job — no id enumeration", async () => {
@@ -101,7 +107,7 @@ describe("handleHookRequest", () => {
       jobs, slack, params: { job: "no_such_job" }, secret, nowMs, ...h,
     });
     expect(res.status).toBe(401);
-    expect(h.receive).not.toHaveBeenCalled();
+    expect(h.to).not.toHaveBeenCalled();
   });
 
   it("rejects an oversized body before doing any signature work", async () => {
@@ -114,7 +120,7 @@ describe("handleHookRequest", () => {
       jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
     });
     expect(res.status).toBe(413);
-    expect(h.receive).not.toHaveBeenCalled();
+    expect(h.to).not.toHaveBeenCalled();
   });
 
   it("bounds the body by BYTES, not JS string length — a multi-byte body can exceed the cap while .length does not", async () => {
@@ -130,7 +136,7 @@ describe("handleHookRequest", () => {
       jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
     });
     expect(res.status).toBe(413);
-    expect(h.receive).not.toHaveBeenCalled();
+    expect(h.to).not.toHaveBeenCalled();
   });
 
   it("decodes multi-byte UTF-8 exactly like req.text() would, so the signature still verifies", async () => {
@@ -147,8 +153,8 @@ describe("handleHookRequest", () => {
       jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
     });
     expect(res.status).toBe(202);
-    const [, args] = h.receive.mock.calls[0];
-    expect(args.message).toContain("café €100 日本語");
+    const [message] = h.send.mock.calls[0];
+    expect(message).toContain("café €100 日本語");
   });
 
   it("rejects a chunked/streamed oversized body without buffering the whole thing", async () => {
@@ -180,7 +186,7 @@ describe("handleHookRequest", () => {
       jobs, slack, params: { job: "feedback_triage" }, secret, nowMs, ...h,
     });
     expect(res.status).toBe(413);
-    expect(h.receive).not.toHaveBeenCalled();
+    expect(h.to).not.toHaveBeenCalled();
     expect(cancelled).toBe(true);
     // MAX_HOOK_BODY_BYTES (1_048_576) / 65_536-byte chunks = 16; a couple more is
     // fine, but nowhere near "kept pulling forever".
@@ -223,7 +229,7 @@ describe("handleHookRequest", () => {
       jobs, slack, params: { job: "__proto__" }, secret, nowMs, ...h,
     });
     expect(res.status).toBe(404);
-    expect(h.receive).not.toHaveBeenCalled();
+    expect(h.to).not.toHaveBeenCalled();
   });
 
   describe("logging", () => {

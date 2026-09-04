@@ -4,3 +4,4 @@ packages:
 minimumReleaseAgeExclude:
   - '@ai-sdk/gateway@4.0.12'
   - ai@7.0.15
+  - eve@0.51.1
