@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/mimu-sh/deskmate/compare/cli-v0.6.1...cli-v0.6.2) (2026-09-05)
+
+
+### Bug Fixes
+
+* **doctor:** stop reporting Vercel sensitive vars as unset ([#40](https://github.com/mimu-sh/deskmate/issues/40)) ([84a9f99](https://github.com/mimu-sh/deskmate/commit/84a9f994cb307008354002cbaeb5f68c87adf9ea))
+
 ## [0.6.1](https://github.com/mimu-sh/deskmate/compare/cli-v0.6.0...cli-v0.6.1) (2026-09-04)
 
 
