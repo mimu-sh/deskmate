@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/mimu-sh/deskmate/compare/core-v0.5.0...core-v0.5.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* tell deskmates what today is ([#42](https://github.com/mimu-sh/deskmate/issues/42)) ([92310de](https://github.com/mimu-sh/deskmate/commit/92310de07a256a68b544d36ad191982333916fcb))
+
 ## [0.5.0](https://github.com/mimu-sh/deskmate/compare/core-v0.4.0...core-v0.5.0) (2026-09-04)
 
 
