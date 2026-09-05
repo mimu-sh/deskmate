@@ -1,5 +1,5 @@
-import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadTeam as realLoadTeam } from "./lib/load-config.js";
 import { probeMcp } from "./lib/mcp-probe.js";
@@ -59,6 +59,41 @@ export function loadLocalEnv(cwd: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * The env keys a pulled Vercel env file wrote EMPTY, which means Vercel could not give
+ * us the value rather than that no value exists.
+ *
+ * Vercel env vars typed `sensitive` are write-only: `vercel env pull` lists the key and
+ * writes `KEY=""`. Doctor then loads that file, reads an empty string, and would report
+ * a perfectly healthy production variable as unset. Treat these as "cannot check from
+ * here" instead, the same way an OAuth connection whose credential resolves at runtime
+ * is reported.
+ *
+ * A key the user really did set to an empty string lands here too. The outcome is the
+ * same either way: this machine cannot verify it.
+ */
+export function sensitiveEnvKeys(file: string | null): Set<string> {
+  const keys = new Set<string>();
+  // ONLY the Vercel pulled file carries the write-only signature. In a hand-authored
+  // `.env` or `.env.local` an empty value means the author left it empty, which is a
+  // real misconfiguration and must keep failing.
+  if (!file || basename(file) !== ".env.production.local" || basename(dirname(file)) !== ".vercel") return keys;
+  if (!existsSync(file)) return keys;
+  let raw: string;
+  try {
+    raw = readFileSync(file, "utf8");
+  } catch {
+    return keys; // unreadable env file is already reported by loadLocalEnv
+  }
+  for (const line of raw.split(/\r?\n/u)) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/u.exec(line);
+    if (!m) continue;
+    const value = m[2]!.trim().replace(/^(["'])(.*)\1$/u, "$2");
+    if (value === "") keys.add(m[1]!);
+  }
+  return keys;
 }
 
 /**
@@ -180,6 +215,13 @@ export async function doctor(_args: string[] = [], cwd: string = process.cwd(), 
   // `vercel env pull` → `deskmate doctor` flow would check an empty env and no-op.
   const envFile = deps.loadEnv(cwd);
   if (envFile) console.log(`Checking against env from ${envFile}`);
+  // Vercel `sensitive` vars pull as empty. Reporting them as unset is a false failure,
+  // so every check below downgrades them to a warning rather than counting them.
+  const unreadable = sensitiveEnvKeys(envFile);
+  // A key is only unverifiable when the pull could not give us a value AND nothing in
+  // the shell supplies one. `loadLocalEnv` never overrides an exported var, so an
+  // export is the effective credential and a failure against it is a real failure.
+  const unverifiable = (key: string): boolean => !process.env[key] && unreadable.has(key);
 
   const team = await deps.loadTeam(cwd);
   const names = Object.keys(team.connections);
@@ -222,6 +264,13 @@ export async function doctor(_args: string[] = [], cwd: string = process.cwd(), 
     }
     if (resolved.kind === "unconfigured") {
       warn(`not configured (${resolved.url}) — set ${prefix}_MCP_URL / ${prefix}_MCP_TOKEN.`);
+      continue;
+    }
+
+    // The connection file is resolved and valid by here, so only the credential-dependent
+    // probe is skipped. A broken or missing file is still diagnosed above.
+    if (unverifiable(`${prefix}_MCP_TOKEN`)) {
+      warn(`${prefix}_MCP_TOKEN is a Vercel sensitive variable, so it pulls empty and cannot be checked here. Verify in production.`);
       continue;
     }
 
@@ -277,33 +326,51 @@ export async function doctor(_args: string[] = [], cwd: string = process.cwd(), 
         .filter((r) => !r.includes("*"))
         .map((r) => r.split("/")[1])
         .filter((n): n is string => Boolean(n));
-      const res = await deps.checkCodingAuth(team.github.org, exactRepos.length ? exactRepos : undefined);
-      if (res.ok) {
+      // Minting a token needs BOTH credentials, so either one being unreadable makes the
+      // check impossible. Probing with a credential we know is empty only manufactures a
+      // failure, so skip the call rather than reporting its guaranteed error.
+      const appCreds = ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"];
+      const appUnverifiable = appCreds.filter(unverifiable);
+      const res = appUnverifiable.length
+        ? null
+        : await deps.checkCodingAuth(team.github.org, exactRepos.length ? exactRepos : undefined);
+
+      if (res === null) {
+        warn(`${appUnverifiable.join(" and ")} ${appUnverifiable.length > 1 ? "are Vercel sensitive variables" : "is a Vercel sensitive variable"}, so the installation token cannot be checked here. Verify in production.`);
+      } else if (res.ok) {
         ok(`GitHub App ready — can mint an installation token for ${team.github.org}.`);
         for (const [id, d] of codingDeskmates) {
           const repos = d.coding!.repos.length ? d.coding!.repos.join(", ") : `${team.github.org}/*`;
           ok(`${id}: coding enabled (repos: ${repos}).`);
         }
-        if (team.github.channel) {
-          if (process.env.GITHUB_WEBHOOK_SECRET) {
-            ok("GitHub channel: webhook secret set.");
-          } else {
-            bad("GitHub channel enabled but GITHUB_WEBHOOK_SECRET is not set — webhook deliveries will fail signature checks.");
-            failures++;
-          }
-          if (process.env.GITHUB_APP_SLUG) {
-            ok("GitHub channel: app slug set (mention dispatch).");
-          } else {
-            bad("GitHub channel enabled but GITHUB_APP_SLUG is not set — the channel will ignore all @mentions.");
-            failures++;
-          }
-        }
-        if (codingDeskmates.length > 0) {
-          warn("pushing needs the Vercel backend (local Docker can't broker the token); protect your default branch.");
-        }
       } else {
         bad(`GitHub App not ready for ${team.github.org}: ${res.error}`);
         failures++;
+      }
+
+      // The channel variables are independent of the installation token: a missing slug
+      // means every @mention is ignored, and a missing secret means every delivery fails
+      // its signature check. Neither may hide behind an App credential we cannot read.
+      if (team.github.channel) {
+        if (process.env.GITHUB_WEBHOOK_SECRET) {
+          ok("GitHub channel: webhook secret set.");
+        } else if (unverifiable("GITHUB_WEBHOOK_SECRET")) {
+          warn("GitHub channel: GITHUB_WEBHOOK_SECRET is a Vercel sensitive variable and cannot be checked here.");
+        } else {
+          bad("GitHub channel enabled but GITHUB_WEBHOOK_SECRET is not set — webhook deliveries will fail signature checks.");
+          failures++;
+        }
+        if (process.env.GITHUB_APP_SLUG) {
+          ok("GitHub channel: app slug set (mention dispatch).");
+        } else if (unverifiable("GITHUB_APP_SLUG")) {
+          warn("GitHub channel: GITHUB_APP_SLUG is a Vercel sensitive variable and cannot be checked here.");
+        } else {
+          bad("GitHub channel enabled but GITHUB_APP_SLUG is not set — the channel will ignore all @mentions.");
+          failures++;
+        }
+      }
+      if (res?.ok && codingDeskmates.length > 0) {
+        warn("pushing needs the Vercel backend (local Docker can't broker the token); protect your default branch.");
       }
     }
   }
