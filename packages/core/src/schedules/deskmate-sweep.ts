@@ -1,4 +1,5 @@
 import { defineSchedule } from "eve/schedules";
+import { todayNote } from "../today.js";
 import { resolveChannelTarget } from "../channel-routes.js";
 import type { ChannelRoute } from "../channel-routes.js";
 import type { Roster } from "../roster.js";
@@ -38,7 +39,8 @@ export function createDeskmateSweep(
         const name = roster[t.deskmate]?.displayName ?? t.deskmate;
         waitUntil(
           to(opts.slack as any, { channelId: t.channelId }).send(
-            `[routing] Delegate to the \`${t.deskmate}\` deskmate (${name}).\n\n` +
+            `${todayNote()}\n\n` +
+              `[routing] Delegate to the \`${t.deskmate}\` deskmate (${name}).\n\n` +
               `[proactive:sweep] Review recent activity in this channel. Post a short digest ` +
               `only if something genuinely warrants it; otherwise finish silently.`,
             { auth: appAuth },

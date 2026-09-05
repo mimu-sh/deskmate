@@ -84,6 +84,23 @@ function find(plan: { writes: { path: string; contents: string | Buffer }[] }, r
 }
 
 describe("planSync", () => {
+  it("emits the per-turn date entry for the root AND every deskmate", () => {
+    // Root-only is not enough. A delegated deskmate is its own agent root and, per the
+    // front-desk routing rules, cannot see the conversation the root was given — so a
+    // date injected only at the root never reaches the deskmate resolving the window.
+    const plan = planSync(fixtureTeam, cwd);
+    const paths = plan.writes.map((w) => w.path);
+
+    expect(paths).toContain(join(cwd, "agent/instructions/today.ts"));
+    for (const id of Object.keys(fixtureTeam.deskmates)) {
+      expect(paths).toContain(join(cwd, `agent/subagents/${id}/instructions/today.ts`));
+    }
+
+    const entry = plan.writes.find((w) => w.path === join(cwd, "agent/instructions/today.ts"))!;
+    expect(String(entry.contents)).toContain("createTodayInstructions");
+    expect(String(entry.contents)).toContain("@deskmate/core/today");
+  });
+
   it("plans every root file", () => {
     const plan = planSync(fixtureTeam, cwd);
     const ps = paths(plan);

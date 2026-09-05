@@ -242,6 +242,24 @@ export default createMemoryInstructions(${JSON.stringify(id)}, ${JSON.stringify(
 }
 
 /**
+ * `agent/instructions/today.ts` and `agent/subagents/<id>/instructions/today.ts` — the
+ * per-turn current-date entry. Same directory-entry mechanism as `instructions/memory.ts`:
+ * it COEXISTS with the composed `instructions.md` beside it.
+ *
+ * Emitted for the root AND for every subagent on purpose. A delegated deskmate is its
+ * own agent root and, per the front-desk routing rules, "cannot see this conversation's
+ * history" — it receives only the `message` the router writes. An entry at the root
+ * alone would therefore never reach the deskmate that actually resolves the window.
+ */
+export function renderTodayInstructions(): string {
+  return `${BANNER}
+import { createTodayInstructions } from "@deskmate/core/today";
+
+export default createTodayInstructions();
+`;
+}
+
+/**
  * `agent/schedules/memory-reflection.ts` — the deployment-root nightly reflection
  * ("dreaming") schedule. Schedules are root-only, so this lives at the agent root,
  * NOT under any subagent. Emitted exactly once, only when ≥1 deskmate opts into

@@ -11,6 +11,7 @@ import {
   renderEnvExample,
   renderEveChannel,
   renderFrontDeskInstructions,
+  renderTodayInstructions,
   renderHooksChannel,
   renderJobSchedule,
   renderMemoryInstructions,
@@ -102,6 +103,8 @@ export function planSync(team: TeamConfig, cwd: string): SyncPlan {
   // ── Root files ────────────────────────────────────────────────────────────
   out("agent/agent.ts", renderRootAgent(team));
   out("agent/instructions.md", renderFrontDeskInstructions());
+  // Per-turn date, beside the composed instructions.md (eve reads instructions/* too).
+  out("agent/instructions/today.ts", renderTodayInstructions());
   out("agent/lib/deskmates.ts", renderRosterRegistry(team));
   out("agent/lib/channel-routes.ts", renderChannelRoutes(team));
   out("agent/tools/deskmate_says.ts", renderDeskmateSaysTool());
@@ -130,6 +133,9 @@ export function planSync(team: TeamConfig, cwd: string): SyncPlan {
       warnings.push(`deskmate "${id}": no authored roles/${role}/instructions.md — wrote a TODO placeholder.`);
     }
     out(`agent/subagents/${id}/instructions.md`, renderSubagentInstructions(roleInstructions, d.voice));
+    // Every deskmate needs its own copy: a delegated subagent is its own agent root
+    // and cannot see the root turn where the date was injected.
+    out(`agent/subagents/${id}/instructions/today.ts`, renderTodayInstructions());
 
     // tools/<tool>.ts — one re-export shim per authored roles/<role>/tools/*.ts.
     for (const tool of tsFiles(join(cwd, "roles", role, "tools"))) {
