@@ -1,27 +1,41 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { todayNote } from "../src/today.js";
 
+// Time is frozen in every case. Comparing todayNote()'s internal `new Date()` against a
+// second `new Date()` in the assertion would be flaky across the UTC midnight boundary,
+// which is a poor look for the fix that exists to get dates right.
+afterEach(() => vi.useRealTimers());
+
 describe("todayNote", () => {
-  it("states the given date in UTC", () => {
-    expect(todayNote(new Date("2026-09-05T23:41:00Z"))).toContain("2026-09-05");
+  it("states the given instant in UTC", () => {
+    const note = todayNote(new Date("2026-09-05T23:41:00Z"));
+    expect(note).toContain("2026-09-05T23:41:00.000Z");
+    expect(note).toContain("date 2026-09-05");
   });
 
-  it("uses the UTC day, not the local one, either side of midnight", () => {
-    // 00:30 UTC is still the previous day in every negative offset; the note must not
-    // drift by a day depending on where the machine runs.
-    expect(todayNote(new Date("2026-09-05T00:30:00Z"))).toContain("2026-09-05");
-    expect(todayNote(new Date("2026-09-05T23:30:00Z"))).toContain("2026-09-05");
+  it("uses the UTC day either side of midnight, never the local one", () => {
+    expect(todayNote(new Date("2026-09-05T00:30:00Z"))).toContain("date 2026-09-05");
+    expect(todayNote(new Date("2026-09-05T23:30:00Z"))).toContain("date 2026-09-05");
+  });
+
+  it("carries a time of day, not only a calendar date", () => {
+    // Job windows are hour-based ("last 24h"). A bare date leaves 24 different
+    // intervals to choose from at any hour other than midnight.
+    const morning = todayNote(new Date("2026-09-05T06:00:00Z"));
+    const evening = todayNote(new Date("2026-09-05T18:00:00Z"));
+    expect(morning).not.toEqual(evening);
   });
 
   it("forbids re-anchoring to whatever dates the data contains", () => {
-    // The production failure recovered by silently re-anchoring. That is the behaviour
-    // that turns a wrong date into a confident answer, so the note has to rule it out.
+    // Re-anchoring is what turned a wrong date into a confident answer in production.
     const note = todayNote(new Date("2026-09-05T00:00:00Z"));
     expect(note).toMatch(/re-anchor/i);
-    expect(note).toMatch(/report that it was empty|returns no data/i);
+    expect(note).toMatch(/report that it was empty/i);
   });
 
-  it("defaults to now when no date is given", () => {
-    expect(todayNote()).toContain(new Date().toISOString().slice(0, 10));
+  it("defaults to now", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-12-25T09:00:00Z"));
+    expect(todayNote()).toContain("2026-12-25T09:00:00.000Z");
   });
 });

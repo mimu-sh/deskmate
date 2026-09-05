@@ -46,6 +46,10 @@
     "./jobs": {
       "types": "./dist/jobs/index.d.ts",
       "default": "./dist/jobs/index.js"
+    },
+    "./today": {
+      "types": "./dist/today.d.ts",
+      "default": "./dist/today.js"
     }
   },
   "files": [
