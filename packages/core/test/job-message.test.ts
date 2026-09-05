@@ -129,3 +129,16 @@ describe("buildJobMessage", () => {
     expect(issue).not.toContain("hand at most");
   });
 });
+
+describe("current date", () => {
+  it("tells the job what today is", () => {
+    // Cron briefs are all relative: conversation_review uses a 24h window and
+    // analytics_review compares two 7-day windows, both against "now".
+    const msg = buildJobMessage({
+      jobId: "j", deskmate: "d", displayName: "D", brief: "b",
+      ceiling: "digest", maxItems: 1, window: "24h",
+    });
+    expect(msg).toContain("[today]");
+    expect(msg).toContain(new Date().toISOString().slice(0, 10));
+  });
+});

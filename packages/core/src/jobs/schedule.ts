@@ -16,10 +16,13 @@ export interface JobScheduleOptions {
  * its own, so it hands the run to Slack with `to(...).send(...)`.
  */
 export function createJobSchedule(opts: JobScheduleOptions) {
-  const message = buildJobMessage(opts.job);
   return defineSchedule({
     cron: opts.cron,
     async run({ to, waitUntil, appAuth }) {
+      // Built per firing, not at construction. The message carries the current date, and
+      // a warm machine would otherwise serve the day it first booted for as long as it
+      // stayed warm, which is the stale-window bug this is meant to remove.
+      const message = buildJobMessage(opts.job);
       waitUntil(to(opts.slack as any, { channelId: opts.channelId }).send(message, { auth: appAuth }));
     },
   });

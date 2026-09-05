@@ -43,6 +43,15 @@ describe("createSlackChannel", () => {
     expect(capturedConfig().threadContext).toEqual({ since: "last-agent-reply" });
   });
 
+  it("tells the deskmate what today is on every mention", async () => {
+    // Without this the model resolves "yesterday" against its training date. In
+    // production that was fourteen months stale and produced a confident wrong answer.
+    createSlackChannel(roster);
+    const result = capturedConfig().onAppMention({}, { channelId: "C_ANY" });
+    const today = new Date().toISOString().slice(0, 10);
+    expect(result.context!.some((c) => c.includes("[today]") && c.includes(today))).toBe(true);
+  });
+
   it("frames the hydrated thread context as untrusted data on @mention", () => {
     createSlackChannel(roster);
 

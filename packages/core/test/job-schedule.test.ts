@@ -39,4 +39,26 @@ describe("createJobSchedule", () => {
     expect(message).toContain("[proactive:job:conversation_review] window: last 24h");
     expect(message).toContain("file at most 3 issue(s)");
   });
+  it("builds the message when the cron fires, not when the schedule is constructed", async () => {
+    // The message used to be built once at module load. On a warm machine that froze
+    // the injected date at whenever the deployment first booted, so a job running days
+    // later would resolve "yesterday" against a stale day.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-09-05T12:00:00Z"));
+      const schedule = createJobSchedule({ cron: "0 6 * * *", channelId: "C0123", slack, job });
+
+      // A later firing must carry the later date.
+      vi.setSystemTime(new Date("2026-09-12T12:00:00Z"));
+      const send = vi.fn().mockResolvedValue(undefined);
+      const to = vi.fn((_channel: unknown, _target: unknown) => ({ send }));
+      await schedule.run!({ to, waitUntil: vi.fn(), appAuth: {} } as never);
+
+      const [message] = send.mock.calls[0]!;
+      expect(message).toContain("2026-09-12");
+      expect(message).not.toContain("2026-09-05");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

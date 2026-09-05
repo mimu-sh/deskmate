@@ -1,4 +1,5 @@
 import { JOB_LABEL, fingerprintMarker } from "./fingerprint.js";
+import { todayNote } from "../today.js";
 
 export type JobCeiling = "digest" | "issue" | "pr";
 
@@ -90,6 +91,9 @@ export function buildJobMessage(spec: JobSpec, payload?: unknown): string {
     : `[proactive:job:${spec.jobId}]`;
 
   const sections = [
+    // Every cron brief is relative (a 24h window, two 7-day windows), so the run needs
+    // to know when "now" is rather than inferring it.
+    todayNote(),
     `[routing] Delegate to the \`${spec.deskmate}\` deskmate (${spec.displayName}).`,
     header,
     "",
