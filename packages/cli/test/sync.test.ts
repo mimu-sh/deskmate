@@ -103,4 +103,34 @@ describe("syncCommand", () => {
     expect(after).toContain("anthropic/claude-opus-4-8");
     expect(after).not.toContain("anthropic/claude-sonnet-5");
   });
+
+  // Naming conflict: deskmate's `defineTeam` accepts snake_case connection names
+  // (underscores), but eve's `eve build` derives a connection's name from its filename
+  // and rejects underscores (it wants kebab-case). A name like `github_write` would
+  // therefore pass config validation, sync fine, then blow up at deploy. `sync` must
+  // fail fast with a message that names the eve conflict, instead of generating a tree
+  // that `eve build` rejects.
+  it("rejects a multi-word (underscore) connection name that eve build would reject at deploy", async () => {
+    cwd = mkdtempSync(join(tmpdir(), "deskmate-sync-"));
+    const cfg = `export default {
+  model: "anthropic/claude-sonnet-5",
+  frontDesk: { maxTurns: 6 },
+  connections: { github_write: { kind: "mcp", env: "GITHUB_WRITE" } },
+  deskmates: {
+    devops: {
+      role: "devops",
+      emoji: ":wrench:",
+      displayName: "DevOps Engineer",
+      summary: "Triages incidents.",
+      reads: ["github_write"],
+    },
+  },
+  channels: {},
+};
+`;
+    writeFileSync(join(cwd, "deskmate.config.ts"), cfg);
+    mkdirSync(join(cwd, "roles/devops"), { recursive: true });
+    writeFileSync(join(cwd, "roles/devops/instructions.md"), "# DevOps\n");
+    await expect(syncCommand(cwd, { quiet: true })).rejects.toThrow(/single lowercase word/);
+  });
 });

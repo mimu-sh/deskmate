@@ -4,7 +4,7 @@ import { createInterface } from "node:readline/promises";
 import { renderMcpConnection, renderConnectConnection } from "./lib/mcp-template.js";
 import { appendConnectionEntry, renderEntry } from "./config-file.js";
 import { CONFIG_FILE, editConfig } from "./add.js";
-import { isValidId } from "./lib/ids.js";
+import { isValidConnectionName, connectionNameError } from "./lib/ids.js";
 
 /**
  * Run `fn` with an `ask(question, fallback)` helper. Buffers stdin lines so it
@@ -87,7 +87,7 @@ export function scaffoldTokenConnection(
     tokenEnv: string;
     description: string;
     tools: string[];
-    scheme?: "bearer" | "basic" | "custom-header";
+    scheme?: "bearer" | "basic" | "custom-header" | "github-app";
     headerName?: string;
   },
   cwd: string,
@@ -140,8 +140,12 @@ export function scaffoldTokenConnection(
 export async function mcpAdd(args: string[], cwd: string = process.cwd()): Promise<void> {
   const name = args[0];
   if (!name) throw new Error("usage: deskmate mcp-add <name>");
-  if (!isValidId(name)) {
-    throw new Error("<name> must be a snake_case identifier (lowercase letter, then letters/digits/underscores).");
+  // Connection names must satisfy BOTH deskmate's snake_case rule AND eve's kebab-case
+  // connection-filename rule — i.e. a single lowercase word (no dashes, no underscores).
+  // Reject anything else here with a message that names the eve conflict, so a name like
+  // `github-write`/`github_write` fails at add time instead of silently at `eve build`.
+  if (!isValidConnectionName(name)) {
+    throw new Error(connectionNameError(name));
   }
   const upper = name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
   await withPrompts(async (ask) => {
@@ -163,15 +167,27 @@ export async function mcpAdd(args: string[], cwd: string = process.cwd()): Promi
     }
     // ── token path ─────────────────────────────────────────────────────────
     const urlEnv = await ask("URL env var", `${upper}_MCP_URL`);
-    const tokenEnv = await ask("Token env var", `${upper}_MCP_TOKEN`);
+    // Ask the scheme before the token env: `github-app` has no <PREFIX>_MCP_TOKEN to
+    // prompt for (it mints an installation token from GITHUB_APP_* at call time).
+    const rawScheme = (await ask("Token scheme [bearer/basic/custom-header/github-app]", "bearer")).toLowerCase();
+    const scheme =
+      rawScheme === "basic" || rawScheme === "custom-header" || rawScheme === "github-app"
+        ? rawScheme
+        : "bearer";
+    // github-app: skip the token-env prompt. The <PREFIX> is still derived from the
+    // URL env's default so the { kind:"mcp", env } config entry stays well-formed; the
+    // value never appears in the generated github-app file.
+    const tokenEnv =
+      scheme === "github-app" ? `${upper}_MCP_TOKEN` : await ask("Token env var", `${upper}_MCP_TOKEN`);
     const description = await ask("Description (for the model)", `Read-only ${name} MCP.`);
     const toolsRaw = await ask("Read tools (comma-separated)", "");
     const tools = toolsRaw.split(",").map((t) => t.trim()).filter(Boolean);
-    const rawScheme = (await ask("Token scheme [bearer/basic/custom-header]", "bearer")).toLowerCase();
-    const scheme = rawScheme === "basic" || rawScheme === "custom-header" ? rawScheme : "bearer";
     const headerName = scheme === "custom-header" ? await ask("Header name", "X-Api-Key") : undefined;
     if (scheme === "basic") {
       console.log(`  basic auth: set ${tokenEnv} to plaintext "publicKey:secretKey" (it gets base64-encoded).`);
+    }
+    if (scheme === "github-app") {
+      console.log(`  github-app auth: set GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY / GITHUB_APP_ORG (no ${tokenEnv} needed).`);
     }
     scaffoldTokenConnection({ name, urlEnv, tokenEnv, description, tools, scheme, headerName }, cwd);
   });
