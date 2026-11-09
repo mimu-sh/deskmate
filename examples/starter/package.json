@@ -12,13 +12,13 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@deskmate/core": "workspace:*",
     "@deskmate/cli": "workspace:*",
+    "@deskmate/core": "workspace:*",
+    "@neondatabase/serverless": "^1.1.0",
     "@vercel/connect": "0.3.2",
-    "ai": "^7.0.82",
-    "eve": "^0.51.1",
-    "zod": "4.4.3",
-    "@neondatabase/serverless": "^1.1.0"
+    "ai": "^7.0.165",
+    "eve": "^0.59.1",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "24.x",
