@@ -33,7 +33,7 @@ describe("deskmateAgentConfig", () => {
       connections: {},
     };
     const cfg = deskmateAgentConfig(plain, "devops");
-    expect(cfg.model).toBe("anthropic/claude-sonnet-5"); // schema default, NOT undefined
+    expect(cfg.model).toBe("anthropic/claude-sonnet-5.5"); // schema default, NOT undefined
     expect(cfg.description).toMatch(/DevOps Engineer/);
   });
 });

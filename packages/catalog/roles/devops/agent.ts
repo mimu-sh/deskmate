@@ -6,5 +6,5 @@ export default defineAgent({
     "causes, and PROPOSES (never auto-applies) remediations. Delegate here for anything " +
     "about errors, incidents, deploys, latency, or system health.",
   // Each deskmate can run its own model. Defaults to the front desk's model.
-  model: "anthropic/claude-sonnet-5",
+  model: "anthropic/claude-sonnet-5.5",
 });

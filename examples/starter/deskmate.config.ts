@@ -9,7 +9,7 @@ import { defineTeam } from "@deskmate/core";
 export default defineTeam({
   // Default model for the front desk and any deskmate that doesn't override it.
   // Models resolve through the Vercel AI Gateway.
-  model: "anthropic/claude-sonnet-5",
+  model: "anthropic/claude-sonnet-5.5",
 
   // GitHub App wiring for coding deskmates (see the `engineer` entry below).
   // Only the org lives here; the App secrets come from env (GITHUB_APP_ID /
