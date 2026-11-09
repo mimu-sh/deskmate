@@ -2,6 +2,8 @@
 
 ## [0.6.4](https://github.com/mimu-sh/deskmate/compare/cli-v0.6.3...cli-v0.6.4) (2026-11-09)
 
+> **Never published to npm.** The release run stopped at @deskmate/core before reaching this package. The same code ships as 0.6.5.
+
 
 ### Dependencies
 
