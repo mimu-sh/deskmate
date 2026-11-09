@@ -6,5 +6,5 @@ export default defineAgent({
     "flags accounts that need attention. Delegate here for customer health, support load, " +
     "churn, retention, or renewal questions.",
   // Each deskmate can run its own model. Defaults to the front desk's model.
-  model: "anthropic/claude-sonnet-5",
+  model: "anthropic/claude-sonnet-5.5",
 });

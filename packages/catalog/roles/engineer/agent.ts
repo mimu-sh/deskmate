@@ -7,5 +7,5 @@ export default defineAgent({
     "human review. NEVER pushes to the default branch and NEVER merges. Delegate here to fix " +
     "a bug, apply a scoped feature, bump a dependency, or make a well-defined code change in a repo.",
   // Each deskmate can run its own model. Defaults to the front desk's model.
-  model: "anthropic/claude-sonnet-5",
+  model: "anthropic/claude-sonnet-5.5",
 });

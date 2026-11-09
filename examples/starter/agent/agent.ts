@@ -2,7 +2,7 @@
 import { defineAgent } from "eve";
 
 export default defineAgent({
-  model: "anthropic/claude-sonnet-5",
+  model: "anthropic/claude-sonnet-5.5",
   // Keep @deskmate/core external so Eve traces it in the hosted output instead of
   // bundling it into each authored channel. Bundling it pulls core's transitive
   // deps (@vercel/connect, ai) into rolldown's per-channel graph and breaks the
