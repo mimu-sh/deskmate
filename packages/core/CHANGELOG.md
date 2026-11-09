@@ -2,6 +2,8 @@
 
 ## [0.6.0](https://github.com/mimu-sh/deskmate/compare/core-v0.5.1...core-v0.6.0) (2026-11-09)
 
+> **Never published to npm.** The registry rejected 0.6.0 after a failed publish, and npm never reuses a version. The same code ships as 0.6.1.
+
 
 ### Features
 

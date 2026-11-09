@@ -6,16 +6,25 @@ name: release-please
 # On every push to main it maintains a per-package "release PR" (for
 # @deskmate/core and the deskmate CLI) that bumps the version + CHANGELOG.
 # Merging a release PR tags the package (e.g. @deskmate/core-v1.2.3), creates a
-# GitHub Release, and — via the publish steps below — publishes the released
-# package(s) to npm with `pnpm publish` (which rewrites workspace:* deps to the
-# concrete version).
+# GitHub Release, and — via the publish steps below — STAGES the released
+# package(s) on npm with `pnpm stage publish` (which rewrites workspace:* deps to
+# the concrete version). A staged version is not public until a maintainer
+# approves it with 2FA:
 #
-# One-time repo setup required:
+#     npm stage list                # find the stage id(s)
+#     npm stage approve <stage-id>  # approve core first, then cli
+#
+# Auth is npm trusted publishing (GitHub OIDC): no npm token is stored anywhere.
+#
+# One-time setup required:
 #   1. Settings → Actions → General → Workflow permissions →
 #        enable "Allow GitHub Actions to create and approve pull requests".
-#   2. Settings → Secrets and variables → Actions → add secret `NPM_TOKEN`:
-#        an npm automation (or granular) token with publish rights to the
-#        @deskmate scope and the `deskmate` package. Without it, publish fails.
+#   2. Trust this workflow on npm, once per package (needs 2FA, npm >= 11.15):
+#        npm trust github @deskmate/core --file release-please.yml \
+#          --repo mimu-sh/deskmate --allow-stage-publish --yes
+#        npm trust github @deskmate/cli  --file release-please.yml \
+#          --repo mimu-sh/deskmate --allow-stage-publish --yes
+#      Without it the stage step fails with a 404 from the registry.
 
 on:
   push:
@@ -26,6 +35,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  id-token: write # npm trusted publishing (OIDC) for the stage step
 
 jobs:
   release-please:
@@ -56,21 +66,27 @@ jobs:
         run: pnpm install --frozen-lockfile
       - if: ${{ steps.release.outputs.releases_created == 'true' }}
         run: pnpm run build:packages
-      - name: Publish released packages to npm
+      - name: Stage released packages on npm
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           RELEASED: ${{ steps.release.outputs.paths_released }}
         run: |
           set -euo pipefail
-          # Publish in dependency order (core before its dependent cli), and only
-          # the paths release-please actually bumped this run. `pnpm publish`
-          # rewrites the workspace:* dep on @deskmate/core to the concrete version.
+          # Stage in dependency order (core before its dependent cli), and only
+          # the paths release-please actually bumped this run. `pnpm stage publish`
+          # rewrites the workspace:* dep on @deskmate/core to the concrete version
+          # and authenticates via OIDC (id-token: write) — never pass --batch,
+          # which skips OIDC.
           for pkg in packages/core packages/cli; do
             if echo "$RELEASED" | jq -e --arg p "$pkg" 'index($p) != null' >/dev/null; then
-              echo "→ publishing $pkg"
-              ( cd "$pkg" && pnpm publish --access public --no-git-checks )
+              echo "→ staging $pkg"
+              ( cd "$pkg" && pnpm stage publish --access public --no-git-checks )
             else
               echo "· $pkg not released this run, skipping"
             fi
           done
+          {
+            echo "### Staged on npm — approve to publish"
+            echo
+            echo "Run npm stage list, then npm stage approve <stage-id> (core first, then cli)."
+          } >> "$GITHUB_STEP_SUMMARY"
