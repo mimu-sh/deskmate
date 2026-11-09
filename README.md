@@ -846,13 +846,34 @@ bump while pre-1.0).
 
 Releases are automated with [Release Please](https://github.com/googleapis/release-please).
 On every push to `main` it maintains one **release PR** that bumps the version and updates
-`CHANGELOG.md` from the commits since the last release; merging that PR tags `vX.Y.Z` and
-publishes a GitHub Release — a version ships only when a human merges it.
+`CHANGELOG.md` from the commits since the last release. A release then takes two human steps:
 
-**One-time repo setup:** the Action opens the release PR, which requires
-**Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create and
-approve pull requests"** to be enabled. That's a repo-admin setting, so turn it on for the
-repo you administer.
+1. **Merge the release PR.** This tags each package (`core-vX.Y.Z`, `cli-vX.Y.Z`), creates the
+   GitHub Releases, and **stages** the packages on npm with `pnpm stage publish`. A staged
+   version is not installable yet.
+2. **Approve the staged packages** with 2FA, core first because the CLI depends on it:
+
+   ```bash
+   npm stage list                 # shows the stage id of each staged package
+   npm stage approve <stage-id>   # @deskmate/core first, then @deskmate/cli
+   ```
+
+CI authenticates to npm with [trusted publishing](https://docs.npmjs.com/trusted-publishers)
+(GitHub OIDC), so no npm token is stored anywhere.
+
+**One-time setup:**
+
+- The Action opens the release PR, which requires **Settings → Actions → General → Workflow
+  permissions → "Allow GitHub Actions to create and approve pull requests"** to be enabled.
+  That's a repo-admin setting, so turn it on for the repo you administer.
+- Trust the release workflow on npm, once per package (needs 2FA and npm ≥ 11.15):
+
+  ```bash
+  npm trust github @deskmate/core --file release-please.yml --repo mimu-sh/deskmate --allow-stage-publish --yes
+  npm trust github @deskmate/cli  --file release-please.yml --repo mimu-sh/deskmate --allow-stage-publish --yes
+  ```
+
+  Without it, the stage step fails with a `404` from the registry.
 
 ## Links
 
