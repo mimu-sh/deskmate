@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/mimu-sh/deskmate/compare/core-v0.5.1...core-v0.6.0) (2026-11-09)
+
+
+### Features
+
+* **core:** default to Claude Sonnet 5.5 ([#44](https://github.com/mimu-sh/deskmate/issues/44)) ([4ac539f](https://github.com/mimu-sh/deskmate/commit/4ac539f8748512aed1a65bd92874575b6ce74a11))
+* **core:** upgrade eve to 0.59.1 ([#45](https://github.com/mimu-sh/deskmate/issues/45)) ([6345b6f](https://github.com/mimu-sh/deskmate/commit/6345b6f3a2bf9e2d49abb3ea922273e513f1e852))
+
 ## [0.5.1](https://github.com/mimu-sh/deskmate/compare/core-v0.5.0...core-v0.5.1) (2026-09-05)
 
 
