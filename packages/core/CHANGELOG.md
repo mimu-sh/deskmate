@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/mimu-sh/deskmate/compare/core-v0.6.1...core-v0.6.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **core:** don't hardcode [@deskmate](https://github.com/deskmate) as the bot's Slack handle ([#49](https://github.com/mimu-sh/deskmate/issues/49)) ([b3443fe](https://github.com/mimu-sh/deskmate/commit/b3443febc9fe5f8a2eab02de55c5ccca65e49854))
+
 ## [0.6.1](https://github.com/mimu-sh/deskmate/compare/core-v0.6.0...core-v0.6.1) (2026-11-09)
 
 
