@@ -8,7 +8,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "eve": "^0.51.1",
+    "eve": "^0.59.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
