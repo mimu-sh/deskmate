@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/mimu-sh/deskmate/compare/core-v0.6.0...core-v0.6.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **release:** stage npm releases via trusted publishing ([#47](https://github.com/mimu-sh/deskmate/issues/47)) ([ee5e19e](https://github.com/mimu-sh/deskmate/commit/ee5e19e4e66d3630198fc8eca91665538a0e2d14))
+
 ## [0.6.0](https://github.com/mimu-sh/deskmate/compare/core-v0.5.1...core-v0.6.0) (2026-11-09)
 
 > **Never published to npm.** The registry rejected 0.6.0 after a failed publish, and npm never reuses a version. The same code ships as 0.6.1.

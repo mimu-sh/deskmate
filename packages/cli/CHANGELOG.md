@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.5](https://github.com/mimu-sh/deskmate/compare/cli-v0.6.4...cli-v0.6.5) (2026-11-09)
+
+
+### Bug Fixes
+
+* **release:** stage npm releases via trusted publishing ([#47](https://github.com/mimu-sh/deskmate/issues/47)) ([ee5e19e](https://github.com/mimu-sh/deskmate/commit/ee5e19e4e66d3630198fc8eca91665538a0e2d14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @deskmate/core bumped to 0.6.1
+
 ## [0.6.4](https://github.com/mimu-sh/deskmate/compare/cli-v0.6.3...cli-v0.6.4) (2026-11-09)
 
 > **Never published to npm.** The release run stopped at @deskmate/core before reaching this package. The same code ships as 0.6.5.
