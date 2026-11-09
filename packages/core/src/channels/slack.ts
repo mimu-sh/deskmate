@@ -6,7 +6,7 @@ import { maxTurns, nextConveneDecision, type ConveneState } from "../convene.js"
 import { todayNote } from "../today.js";
 import type { Roster } from "../roster.js";
 
-// Slack surface for Deskmate. Users summon the team by tagging @deskmate; the
+// Slack surface for Deskmate. Users summon the team by @-mentioning the bot; the
 // front desk routes each request to the right deskmate and relays the answer.
 //
 // Roster-parameterized: `createSlackChannel(roster)` returns the channel, so core
